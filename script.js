@@ -3,7 +3,7 @@
 // ============================================================================
 
 // --- VARIÁVEIS GLOBAIS ---
-const URL_API = 'http://localhost:3000';
+const URL_API = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
 let abaAtual = 'pendentes';
 let pedidosGlobais = [];
 let estoqueGlobais = [];
