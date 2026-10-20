@@ -396,7 +396,7 @@ function renderizarPedidos() {
         let btnWhatsApp = '';
         if (p.status === 'Concluído' && p.clientes && p.clientes.telefone) {
             const primeiroNome = p.clientes.nome.split(' ')[0];
-            const texto = `Olá, ${primeiroNome}. Informamos que o seu pedido na Bordaveiro ("${p.descricao}") está concluído e disponível para levantamento. Obrigado pela preferência.`;
+            const texto = `Olá, ${primeiroNome}. Informamos que o seu pedido na Bordaveiro ("${p.descricao}") podendo ser levantado de segunda à sexta feira das 10:00 às 13:00 e das 14:00 às 17:45, exceto finais de semana e feriados. Obrigado pela preferência.`;
             const link = ligacaoWhatsApp(p.clientes.telefone, texto);
             btnWhatsApp = `<button class="btn-small" style="background:#25D366;" onclick="window.open(this.dataset.link, '_blank')" data-link="${escapar(link)}">Notificar cliente</button>`;
         }
