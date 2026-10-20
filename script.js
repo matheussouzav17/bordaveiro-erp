@@ -1084,4 +1084,4 @@ function gerarPDF(id) {
     doc.text('Bordaveiro - Documento gerado eletronicamente', 105, 281, { align: 'center' });
 
     doc.save(`Bordaveiro_Pedido_${p.id}.pdf`);
-}.gitignore
+}
