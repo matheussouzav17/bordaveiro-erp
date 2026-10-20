@@ -59,18 +59,23 @@ function camposPedido(dados) {
 app.post('/auth/login', async (req, res) => {
   const { email, senha } = req.body;
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('utilizadores')
     .select('*')
-    .eq('email', email)
-    .eq('senha', senha) // Aqui usa a variável 'senha'
-    .single();  
+    .eq('email', String(email || '').trim())
+    .eq('senha', senha)
+    .maybeSingle();
 
-  if (data) {
-    res.json({ token: 'sessao_' + data.id, perfil: data.perfil, nome: data.nome });
-  } else {
-    res.status(401).json({ erro: 'Email ou palavra-passe incorretos.' });
+  if (error) {
+    console.error('Erro Supabase no login:', error.code, error.message);
+    return res.status(500).json({ erro: 'Erro ao consultar a base de dados.' });
   }
+
+  if (!data) {
+    return res.status(401).json({ erro: 'Email ou palavra-passe incorretos.' });
+  }
+
+  res.json({ token: 'sessao_' + data.id, perfil: data.perfil, nome: data.nome });
 });
 
 // ==========================================
