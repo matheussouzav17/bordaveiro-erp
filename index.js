@@ -57,14 +57,14 @@ function camposPedido(dados) {
 // 1. AUTENTICAÇÃO E LOGIN
 // ==========================================
 app.post('/auth/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, senha } = req.body;
 
   const { data } = await supabase
     .from('utilizadores')
     .select('*')
     .eq('email', email)
-    .eq('senha', password)
-    .single();
+    .eq('senha', senha) // Aqui usa a variável 'senha'
+    .single();  
 
   if (data) {
     res.json({ token: 'sessao_' + data.id, perfil: data.perfil, nome: data.nome });
