@@ -1,0 +1,27 @@
+{
+  "name": "dp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/matheussouzav17/bordaveiro-erp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/matheussouzav17/bordaveiro-erp/issues"
+  },
+  "homepage": "https://github.com/matheussouzav17/bordaveiro-erp#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
+    "cors": "^2.8.6",
+    "express": "^5.3.0",
+    "multer": "^2.4.0"
+  }
+}
