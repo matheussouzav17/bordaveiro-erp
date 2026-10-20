@@ -51,16 +51,11 @@ async function fazerLogin() {
     }
 
     try {
-        const resposta = await fetch('/auth/login', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-        email: emailDigitado,   // Certifica-te de que a chave é 'email'
-        senha: senhaDigitada    // Certifica-te de que a chave é 'senha'
-    })
-});
+        const resposta = await fetch(`${URL_API}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email, senha: password })
+        });
 
         const dados = await resposta.json();
 
@@ -73,6 +68,7 @@ async function fazerLogin() {
             msgErro.style.display = 'block';
         }
     } catch (e) {
+        console.error('Erro no login:', e);
         msgErro.innerText = 'Não foi possível contactar o servidor. Tente novamente mais tarde.';
         msgErro.style.display = 'block';
     }
