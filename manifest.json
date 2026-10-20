@@ -1,0 +1,21 @@
+{
+  "name": "Bordaveiro",
+  "short_name": "Bordaveiro",
+  "description": "Sistema de gestão de pedidos e stock.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#FAF6F2",
+  "theme_color": "#8C5E3C",
+  "icons": [
+    {
+      "src": "logo-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

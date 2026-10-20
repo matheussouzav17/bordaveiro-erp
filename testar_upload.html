@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <title>Testar Upload - Projeto Bordaveiro</title>
+  <style>
+    body { font-family: Arial; padding: 20px; background: #f4f4f4; }
+    .caixa { background: white; padding: 20px; border-radius: 8px; max-width: 400px; }
+    input, button { margin-top: 10px; width: 100%; padding: 8px; box-sizing: border-box; }
+    button { background: #4CAF50; color: white; border: none; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+  <div class="caixa">
+    <h2>Anexar PNG ao Pedido</h2>
+    
+    <label>Teu Token de Login (Bearer):</label>
+    <input type="text" id="token" placeholder="Cola aqui o token...">
+
+    <label>Escolher Imagem (PNG):</label>
+    <input type="file" id="imagem" accept="image/png">
+
+    <button onclick="enviarImagem()">Testar Envio</button>
+
+    <pre id="resultado" style="margin-top:20px; color: blue;"></pre>
+  </div>
+
+  <script>
+    async function enviarImagem() {
+      const token = document.getElementById('token').value;
+      const ficheiro = document.getElementById('imagem').files[0];
+      const painelResultado = document.getElementById('resultado');
+
+      if (!token || !ficheiro) {
+        painelResultado.innerText = "Por favor, preenche o token e escolhe a imagem!";
+        return;
+      }
+
+      painelResultado.innerText = "A enviar para o Supabase...";
+
+      // Preparar os dados como um formulário real
+      const formData = new FormData();
+      formData.append('imagem', ficheiro);
+
+      try {
+        // Atenção: Vê se o ID do pedido (neste caso 5) existe na tua base de dados!
+        const resposta = await fetch('http://localhost:3000/pedidos/5/imagem', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData
+        });
+
+        const dados = await resposta.json();
+        painelResultado.innerText = JSON.stringify(dados, null, 2);
+      } catch (erro) {
+        painelResultado.innerText = "Erro ao enviar: " + erro.message;
+      }
+    }
+  </script>
+
+</body>
+</html>

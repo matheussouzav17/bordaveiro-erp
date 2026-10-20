@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bordaveiro - Sistema de Gestão</title>
+
+  <!-- Geração de PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+  <!-- Exportação para Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#8C5E3C">
+  <link rel="apple-touch-icon" href="logo-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="container">
+
+    <!-- ECRÃ DE LOGIN -->
+    <div id="login-screen">
+      <div class="login-card">
+        <h2 style="color: #4a2511; margin-top: 0; margin-bottom: 5px; font-size: 32px; font-family: 'Times New Roman', serif; font-style: italic;">Bordaveiro</h2>
+        <p class="login-subtitle">Acesso ao Sistema</p>
+
+        <div class="input-wrapper">
+          <input type="email" id="email" class="login-input" placeholder="Email" onkeydown="if(event.key === 'Enter') fazerLogin()">
+        </div>
+        <div class="input-wrapper">
+          <input type="password" id="password" class="login-input" placeholder="Palavra-passe" onkeydown="if(event.key === 'Enter') fazerLogin()">
+        </div>
+
+        <button class="btn-login" onclick="fazerLogin()">Entrar</button>
+
+        <p style="margin-top: 20px; font-size: 13px;">
+          <a href="#" onclick="recuperarSenha(); return false;" style="color: #8C5E3C; text-decoration: none; font-weight: bold;">Recuperar acesso</a>
+        </p>
+
+        <p id="msg-erro" style="color: red; display: none; margin-top: 15px; font-size: 12px; font-weight: bold;"></p>
+      </div>
+    </div>
+
+    <!-- ÁREA PRINCIPAL -->
+    <div id="dashboard-screen">
+
+      <div class="header-dash">
+        <h2 style="margin: 0; color: #4A2511;">BORDAVEIRO</h2>
+        <div class="menu-navegacao">
+          <button id="nav-pedidos" class="btn-nav btn-nav-active" onclick="mudarPagina('pedidos')">Pedidos</button>
+          <button id="nav-estoque" class="btn-nav btn-nav-inactive" onclick="mudarPagina('estoque')">Estoque</button>
+          <button id="nav-estatisticas" class="btn-nav btn-nav-inactive" onclick="mudarPagina('estatisticas')">Estatísticas</button>
+          <button id="nav-admin" class="btn-nav btn-nav-inactive" style="display: none;" onclick="mudarPagina('admin')">Administração</button>
+          <button class="btn-nav" style="background-color: #593122; color: white;" onclick="terminarSessao()">Sair</button>
+        </div>
+      </div>
+
+      <!-- PAINEL DE ANIVERSÁRIOS -->
+      <div id="painel-aniversarios" style="display: none; background: white; border-left: 5px solid #E5A83B; padding: 15px 25px; margin-top: 20px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px;">
+        <div>
+          <h4 style="margin: 0; color: #4A2511;">Aniversários Próximos</h4>
+          <p style="margin: 5px 0 0 0; font-size: 13px; color: #666;" id="texto-aniversarios"></p>
+        </div>
+        <div id="botoes-aniversarios" style="display: flex; gap: 10px; flex-wrap: wrap;"></div>
+      </div>
+
+      <!-- PÁGINA 1: PEDIDOS -->
+      <div id="pagina-pedidos" class="grid">
+
+        <div>
+          <div class="card" id="card-form-pedido">
+
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #EADDCE; padding-bottom: 12px; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+              <h3 id="titulo-form-pedido" style="margin: 0;">Novo Pedido</h3>
+              <div style="display: flex; gap: 10px;">
+                <button class="btn-small" style="background: #A67B5B;" onclick="abrirModalCliente()">Novo Cliente</button>
+                <button class="btn-small" style="background: #C38D59;" onclick="abrirModalDP()">Pedido DP</button>
+              </div>
+            </div>
+
+            <div class="input-group dropdown-pesquisa">
+              <label>Cliente</label>
+              <input type="text" id="pesquisa-cliente-input" placeholder="Pesquisar por nome, telemóvel ou NIF..." onfocus="mostrarDropdownClientes()" onkeyup="filtrarDropdownClientes()" autocomplete="off" style="border: 2px solid #EADDCE; padding: 12px;">
+              <input type="hidden" id="novo-cliente-id">
+              <div id="dropdown-clientes-lista" class="dropdown-lista"></div>
+            </div>
+
+            <div class="input-group">
+              <label>Descrição Principal</label>
+              <input type="text" id="nova-descricao" placeholder="Ex: Toalha de batizado com anjo">
+            </div>
+
+            <div class="input-group">
+              <label>Origem do Artigo</label>
+              <select id="nova-origem" onchange="verificarOrigemArtigo()">
+                <option value="Cliente">Fornecido pelo cliente</option>
+                <option value="Bordaveiro">Vendido pela Bordaveiro</option>
+              </select>
+            </div>
+
+            <div class="caixa-bordaveiro" id="grupo-bordaveiro">
+              <div class="input-group">
+                <label>Tipo de Artigo Vendido</label>
+                <select id="novo-tipo-artigo" onchange="verificarTipoArtigo()">
+                  <option value="Farda">Farda / Uniforme</option>
+                  <option value="Bebé">Artigo de Bebé</option>
+                </select>
+              </div>
+              <div style="display: flex; gap: 10px;">
+                <div class="input-group" style="flex: 1;">
+                  <label>Qtd.</label>
+                  <input type="number" id="novo-qtd-artigo" value="1" min="1">
+                </div>
+                <div class="input-group" style="flex: 2;">
+                  <label>Tamanhos</label>
+                  <input type="text" id="novo-tamanhos-artigo" placeholder="Ex: M, L">
+                </div>
+              </div>
+              <div class="input-group">
+                <label>Marca</label>
+                <input type="text" id="novo-marca-artigo" placeholder="Ex: Roly">
+              </div>
+              <div class="input-group" id="grupo-bebe" style="display: none;">
+                <label style="color: #8C5E3C;">Opção Bebé</label>
+                <select id="novo-detalhe-bebe">
+                  <option value="Com Bordado">Com bordado</option>
+                  <option value="Venda Direta">Apenas venda direta</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="input-group">
+              <label>Códigos das Linhas Utilizadas</label>
+              <input type="text" id="nova-linha" placeholder="Ex: 1143, 1000">
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+              <div class="input-group" style="flex: 1;">
+                <label>Valor Total (€)</label>
+                <input type="number" step="0.01" id="novo-valor">
+              </div>
+              <div class="input-group" style="flex: 1;">
+                <label>Data de Produção</label>
+                <input type="date" id="nova-data-producao">
+              </div>
+              <div class="input-group" style="flex: 1;">
+                <label>Data de Entrega</label>
+                <input type="date" id="nova-data-entrega">
+              </div>
+            </div>
+
+            <div style="display: flex; gap: 10px;">
+              <div class="input-group" style="flex: 1;">
+                <label>Estado do Pagamento</label>
+                <select id="novo-pagamento" onchange="verificarPagamento()">
+                  <option value="Na Entrega">Pagamento na entrega</option>
+                  <option value="Completo">Pago na totalidade</option>
+                  <option value="Parcial">Pago parcialmente</option>
+                </select>
+              </div>
+              <div class="input-group" style="flex: 1;">
+                <label>Método</label>
+                <select id="novo-metodo-pagamento">
+                  <option value="Numerário">Numerário</option>
+                  <option value="MBWay">MBWay</option>
+                  <option value="Multibanco">Multibanco (TPA)</option>
+                  <option value="Transferência">Transferência</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="input-group" id="grupo-valor-pago" style="display: none; border-left: 4px solid #C38D59; padding-left: 10px;">
+              <label style="color: #8C5E3C;">Valor já pago (€)</label>
+              <input type="number" step="0.01" id="novo-valor-pago">
+            </div>
+
+            <div class="caixa-ficheiros" id="grupo-ficheiros">
+              <label style="display: block; font-weight: bold; margin-bottom: 10px; color: #4A2511;">Ficheiros (opcional)</label>
+              <div style="margin-bottom: 10px;">
+                <small style="color:#666;">1. Imagem do desenho (PNG):</small><br>
+                <input type="file" id="nova-imagem" accept="image/png" style="font-size: 13px;">
+              </div>
+              <div>
+                <small style="color:#666;">2. Matriz de bordado (DST):</small><br>
+                <input type="file" id="novo-dst" accept=".dst" style="font-size: 13px;">
+              </div>
+            </div>
+
+            <button id="btn-guardar-pedido" class="btn" onclick="guardarPedido()">Guardar Pedido</button>
+            <button id="btn-guardar-orcamento" class="btn" style="background-color: #B08D6A; margin-top: 10px;" onclick="guardarOrcamento()">Gerar Orçamento (sem criar pedido)</button>
+            <p style="font-size: 12px; color: #666; margin: 8px 0 0 0; text-align: center;">O orçamento fica guardado no separador "Orçamentos" e passa a pedido quando o cliente aprovar.</p>
+            <button id="btn-cancelar-edicao" class="btn" style="background-color: #B08D6A; margin-top: 10px; display: none;" onclick="cancelarEdicao()">Cancelar Edição</button>
+            <div id="msg-novo-pedido" style="margin-top: 15px; font-weight: bold; font-size: 14px; text-align: center;"></div>
+          </div>
+        </div>
+
+        <!-- LISTA DE PEDIDOS -->
+        <div>
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #EADDCE; padding-bottom: 15px; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+              <h3 style="margin: 0;">Lista de Pedidos</h3>
+              <div>
+                <button id="tab-pendentes" class="tab-btn tab-active" onclick="mudarAba('pendentes')">Pendentes</button>
+                <button id="tab-concluidos" class="tab-btn tab-inactive" onclick="mudarAba('concluidos')">Concluídos</button>
+                <button id="tab-orcamentos" class="tab-btn tab-inactive" onclick="mudarAba('orcamentos')">Orçamentos</button>
+              </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;">
+              <input type="text" id="pesquisa-pedidos" placeholder="Pesquisar por cliente ou descrição..." style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box;" onkeyup="renderizarPedidos()">
+
+              <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: #FAF6F2; padding: 10px; border-radius: 6px; border: 1px solid #EADDCE;">
+                <div style="display: flex; align-items: center; gap: 5px; flex: 1; min-width: 130px;">
+                  <small style="font-weight: bold; color: #4A2511;">De:</small>
+                  <input type="date" id="filtro-data-de" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; width: 100%; font-family: inherit;" onchange="renderizarPedidos()">
+                </div>
+                <div style="display: flex; align-items: center; gap: 5px; flex: 1; min-width: 130px;">
+                  <small style="font-weight: bold; color: #4A2511;">Até:</small>
+                  <input type="date" id="filtro-data-ate" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; width: 100%; font-family: inherit;" onchange="renderizarPedidos()">
+                </div>
+                <button class="btn-small" style="background: #B08D6A; padding: 7px 12px;" onclick="limparFiltroCalendarioPedidos()">Limpar</button>
+              </div>
+            </div>
+
+            <div id="lista-pedidos" style="max-height: 600px; overflow-y: auto; padding-right: 10px;">
+              <p style="text-align: center; color: #888; margin-top: 20px;">A carregar pedidos...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PÁGINA 2: ESTOQUE -->
+      <div id="pagina-estoque" class="grid" style="display: none;">
+        <div>
+          <div class="card">
+            <h3>Entrada de Mercadoria</h3>
+            <div class="input-group">
+              <label>Categoria</label>
+              <select id="estoque-categoria" onchange="mudarFormularioEstoque()">
+                <option value="Farda">Fardas / Uniformes</option>
+                <option value="Linha">Linhas de Bordar</option>
+                <option value="Bebé">Roupa de Bebé</option>
+              </select>
+            </div>
+            <div class="input-group">
+              <label>Descrição</label>
+              <input type="text" id="estoque-descricao">
+            </div>
+            <div class="input-group">
+              <label>Quantidade</label>
+              <input type="number" id="estoque-quantidade" value="1" min="1">
+            </div>
+            <div id="grupo-fardas-bebe-estoque">
+              <div class="input-group">
+                <label>Tamanho</label>
+                <input type="text" id="estoque-tamanho">
+              </div>
+              <div class="input-group">
+                <label>Marca</label>
+                <input type="text" id="estoque-marca">
+              </div>
+            </div>
+            <div id="grupo-linhas-estoque" style="display: none;">
+              <div class="input-group">
+                <label>Código da Linha / Cor</label>
+                <input type="text" id="estoque-codigo">
+              </div>
+            </div>
+            <button class="btn" onclick="guardarEstoque()">Adicionar ao Estoque</button>
+            <div id="msg-estoque" style="margin-top: 15px; font-weight: bold; font-size: 14px; text-align: center;"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <h3>Estoque Atual</h3>
+            <div id="lista-estoque" style="max-height: 500px; overflow-y: auto; padding-right: 10px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PÁGINA 3: ESTATÍSTICAS -->
+      <div id="pagina-estatisticas" style="display: none;">
+        <div class="card" style="margin-top: 20px; border-left: 5px solid #8C5E3C;">
+          <h4 style="margin-top: 0; color: #4A2511; font-size: 18px;">Filtro por Período (data de entrega)</h4>
+          <div style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
+            <div class="input-group" style="width: auto; margin-bottom: 0;">
+              <label>Início</label>
+              <input type="date" id="stat-data-inicio">
+            </div>
+            <div class="input-group" style="width: auto; margin-bottom: 0;">
+              <label>Fim</label>
+              <input type="date" id="stat-data-fim">
+            </div>
+            <button class="btn-small" style="background-color: #8C5E3C; padding: 10px 20px;" onclick="calcularEstatisticasGlobais()">Aplicar</button>
+            <button class="btn-small" style="background-color: #B08D6A; padding: 10px 20px;" onclick="limparFiltroEstatisticas()">Limpar</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top: 20px;">
+          <h3 style="border-bottom: 2px solid #EADDCE; padding-bottom: 10px;">Resumo Financeiro</h3>
+          <p style="font-size: 13px; color: #666; margin: 0;">Clique num cartão para descarregar o relatório correspondente em Excel (respeita o filtro de período).</p>
+          <div class="grid-stats">
+            <div class="stat-card clicavel" style="border-color: #8C5E3C;" title="Descarregar relatório de faturação geral" onclick="exportarRelatorio('faturacao')">
+              <div class="stat-title">Faturação Geral</div>
+              <p class="stat-value" id="stat-faturado" style="color: #8C5E3C;">€ 0.00</p>
+            </div>
+            <div class="stat-card clicavel" style="border-color: #A67B5B;" title="Descarregar relatório de faturação DP" onclick="exportarRelatorio('dp')">
+              <div class="stat-title">Exclusivo DP</div>
+              <p class="stat-value" id="stat-faturado-dp" style="color: #A67B5B;">€ 0.00</p>
+            </div>
+            <div class="stat-card clicavel" style="border-color: #C38D59;" title="Descarregar relatório de valores por receber" onclick="exportarRelatorio('pendente')">
+              <div class="stat-title">Por Receber</div>
+              <p class="stat-value" id="stat-pendente" style="color: #C38D59;">€ 0.00</p>
+            </div>
+            <div class="stat-card clicavel" style="border-color: #593122;" title="Descarregar relatório de pedidos" onclick="exportarRelatorio('pedidos')">
+              <div class="stat-title">Nº de Pedidos</div>
+              <p class="stat-value" id="stat-qtd" style="color: #593122;">0</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PÁGINA 4: ADMINISTRAÇÃO -->
+      <div id="pagina-admin" class="grid" style="display: none;">
+        <div>
+          <div class="card" style="border-left: 5px solid #3e1f16;">
+            <h3 style="color: #3e1f16;">Adicionar Utilizador</h3>
+
+            <div class="input-group">
+              <label>Nome do Funcionário</label>
+              <input type="text" id="novo-user-nome" placeholder="Ex: Ana Silva">
+            </div>
+            <div class="input-group">
+              <label>Email (utilizado no acesso)</label>
+              <input type="email" id="novo-user-email">
+            </div>
+            <div class="input-group">
+              <label>Palavra-passe Provisória</label>
+              <input type="password" id="novo-user-senha">
+            </div>
+            <div class="input-group">
+              <label>Nível de Acesso</label>
+              <select id="novo-user-perfil">
+                <option value="funcionario">Funcionário (Pedidos e Estoque)</option>
+                <option value="admin">Administrador (Acesso total)</option>
+              </select>
+            </div>
+
+            <button class="btn" style="background-color: #3e1f16;" onclick="criarUtilizador()">Criar Conta</button>
+            <div id="msg-novo-user" style="margin-top: 15px; font-weight: bold; font-size: 14px; text-align: center;"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <h3 style="color: #3e1f16;">Contas Ativas</h3>
+            <p style="font-size: 12px; color: #666; margin-top: -10px;">Gestão dos utilizadores com acesso ao sistema.</p>
+            <div id="lista-utilizadores" style="max-height: 500px; overflow-y: auto; padding-right: 10px;">
+              <p style="text-align: center; color: #888; margin-top: 20px;">A carregar utilizadores...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL: NOVO CLIENTE -->
+  <div class="modal-overlay" id="modal-cliente">
+    <div class="modal-content">
+      <button class="btn-fechar-modal" onclick="fecharModalCliente()">X</button>
+      <h3>Novo Cliente</h3>
+
+      <div class="input-group">
+        <label>Nome do Cliente</label>
+        <input type="text" id="novo-nome-cliente">
+      </div>
+      <div class="input-group">
+        <label>Email</label>
+        <input type="email" id="novo-email-cliente">
+      </div>
+      <div class="input-group">
+        <label>Telefone / Contacto</label>
+        <input type="text" id="novo-telefone-cliente">
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <div class="input-group" style="flex: 1;">
+          <label>NIF</label>
+          <input type="text" id="novo-nif-cliente" placeholder="Ex: 123456789">
+        </div>
+        <div class="input-group" style="flex: 1;">
+          <label>Data de Aniversário</label>
+          <input type="date" id="novo-aniversario-cliente">
+        </div>
+      </div>
+
+      <button class="btn" style="margin-top: 10px;" onclick="criarCliente()">Guardar Cliente</button>
+      <div id="msg-novo-cliente" style="margin-top: 15px; font-weight: bold; font-size: 14px; text-align: center;"></div>
+    </div>
+  </div>
+
+  <!-- MODAL: PEDIDO DP -->
+  <div class="modal-overlay" id="modal-dp">
+    <div class="modal-content">
+      <button class="btn-fechar-modal" onclick="fecharModalDP()">X</button>
+      <h3 style="color: #8C5E3C;">Registo Rápido: DP</h3>
+      <p style="font-size: 12px; color: #666; margin-top: 0; margin-bottom: 15px;">Registo rápido de pedidos para a cliente DP.</p>
+
+      <div class="input-group">
+        <label>Descrição</label>
+        <input type="text" id="dp-descricao">
+      </div>
+      <div class="input-group">
+        <label>Valor (€)</label>
+        <input type="number" step="0.01" id="dp-valor">
+      </div>
+      <div class="input-group">
+        <label>Data de Entrega</label>
+        <input type="date" id="dp-data-entrega">
+      </div>
+
+      <button class="btn" style="margin-top: 10px;" onclick="criarPedidoDP()">Guardar Pedido DP</button>
+      <div id="msg-dp-pedido" style="margin-top: 15px; font-weight: bold; font-size: 14px; text-align: center;"></div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+
+</body>
+</html>
