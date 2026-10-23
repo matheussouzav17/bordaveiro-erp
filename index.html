@@ -136,10 +136,21 @@
               <input type="text" id="nova-linha" placeholder="Ex: 1143, 1000">
             </div>
 
+            <div class="caixa-produtos">
+              <label style="display: block; font-weight: bold; margin-bottom: 10px; color: #4A2511;">Produtos / Serviços</label>
+              <div id="lista-itens-pedido"></div>
+              <button type="button" class="btn-small" style="background: #A67B5B;" onclick="adicionarItemPedido()">+ Adicionar produto</button>
+              <div class="totais-iva">
+                <div><span>Total sem IVA</span><strong id="total-sem-iva">€ 0.00</strong></div>
+                <div><span>IVA (23%)</span><strong id="total-iva">€ 0.00</strong></div>
+                <div class="total-final"><span>Total com IVA</span><strong id="total-com-iva">€ 0.00</strong></div>
+              </div>
+            </div>
+
             <div style="display: flex; gap: 10px;">
               <div class="input-group" style="flex: 1;">
                 <label>Valor Total (€)</label>
-                <input type="number" step="0.01" id="novo-valor">
+                <input type="number" step="0.01" id="novo-valor" title="Preenchido automaticamente com o total com IVA dos produtos">
               </div>
               <div class="input-group" style="flex: 1;">
                 <label>Data de Produção</label>
@@ -179,12 +190,12 @@
             <div class="caixa-ficheiros" id="grupo-ficheiros">
               <label style="display: block; font-weight: bold; margin-bottom: 10px; color: #4A2511;">Ficheiros (opcional)</label>
               <div style="margin-bottom: 10px;">
-                <small style="color:#666;">1. Imagem do desenho (PNG):</small><br>
-                <input type="file" id="nova-imagem" accept="image/png" style="font-size: 13px;">
+                <small style="color:#666;">1. Imagens do desenho (PNG, até 6):</small><br>
+                <input type="file" id="nova-imagem" accept="image/png" multiple onchange="validarLimiteFicheiros(this)" style="font-size: 13px;">
               </div>
               <div>
-                <small style="color:#666;">2. Matriz de bordado (DST):</small><br>
-                <input type="file" id="novo-dst" accept=".dst" style="font-size: 13px;">
+                <small style="color:#666;">2. Matrizes de bordado (DST, até 6):</small><br>
+                <input type="file" id="novo-dst" accept=".dst" multiple onchange="validarLimiteFicheiros(this)" style="font-size: 13px;">
               </div>
             </div>
 

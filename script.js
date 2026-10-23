@@ -3,13 +3,16 @@
 // ============================================================================
 
 // --- VARIÁVEIS GLOBAIS ---
-const URL_API = window.location.hostname === 'localhost' ? 'http://localhost:3000' : '';
+// Em desenvolvimento (Live Server, 127.0.0.1, ficheiro aberto diretamente) a API corre à parte na porta 3000
+const ehLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname) || window.location.protocol === 'file:';
+const URL_API = ehLocal && window.location.port !== '3000' ? 'http://localhost:3000' : '';
 let abaAtual = 'pendentes';
 let pedidosGlobais = [];
 let estoqueGlobais = [];
 let clientesGlobais = [];
 
 window.onload = () => {
+    adicionarItemPedido();
     if (localStorage.getItem('token_bordaveiro')) {
         mostrarDashboard();
     }
@@ -403,15 +406,17 @@ function renderizarPedidos() {
 
         const btnEditar = `<button class="btn-small" style="background:#f39c12;" onclick="abrirEditarPedido(${p.id})">Editar</button>`;
 
-        let botaoDst = '';
-        if (p.arquivo_dst) {
-            botaoDst = `<a href="${escapar(p.arquivo_dst)}" target="_blank" class="btn-small" style="background:#3498db;">Descarregar DST</a>`;
-        }
+        const urlsDst = lerUrls(p.arquivo_dst);
+        const botaoDst = urlsDst.map((url, i) =>
+            `<a href="${escapar(url)}" target="_blank" class="btn-small" style="background:#3498db;">${urlsDst.length > 1 ? `DST ${i + 1}` : 'Descarregar DST'}</a>`
+        ).join('');
 
-        const miniatura = p.arquivo_imagem
-            ? `<a href="${escapar(p.arquivo_imagem)}" target="_blank" title="Abrir imagem completa">
-                 <img class="thumb-pedido" src="${escapar(p.arquivo_imagem)}" alt="Imagem do pedido ${p.id}" loading="lazy">
-               </a>`
+        const urlsImagem = lerUrls(p.arquivo_imagem);
+        const miniatura = urlsImagem.length
+            ? `<div class="thumbs-pedido">${urlsImagem.map((url, i) =>
+                `<a href="${escapar(url)}" target="_blank" title="Abrir imagem completa">
+                   <img class="thumb-pedido" src="${escapar(url)}" alt="Imagem ${i + 1} do pedido ${p.id}" loading="lazy">
+                 </a>`).join('')}</div>`
             : '';
 
         let dataFormatada = 'Sem data';
@@ -426,7 +431,7 @@ function renderizarPedidos() {
           <strong style="font-size: 15px; color: #4A2511;">#${p.id} - ${escapar(p.descricao)}${ehOrcamento ? ' <span style="font-size:11px; background:#E5A83B; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ORÇAMENTO</span>' : ''}</strong>
           <div style="display:flex; gap:6px; flex-wrap: wrap;">${botaoDst}<button class="btn-small" style="background:#A67B5B;" onclick="gerarPDF(${p.id})">Gerar PDF</button></div>
         </div>
-        <div class="pedido-corpo">
+        <div class="pedido-corpo${urlsImagem.length > 1 ? ' varias-imagens' : ''}">
           ${miniatura}
           <p style="margin:2px 0; font-size:13px; color:#555;">
             <strong>Cliente:</strong> ${p.clientes ? escapar(p.clientes.nome) : 'Desconhecido'}<br>
@@ -447,10 +452,85 @@ function limparFiltroCalendarioPedidos() {
     renderizarPedidos();
 }
 
+// --- Produtos do pedido com IVA ---
+const TAXA_IVA = 0.23;
+const arred = n => Math.round(n * 100) / 100;
+
+function adicionarItemPedido(item = {}) {
+    const div = document.createElement('div');
+    div.className = 'item-pedido';
+    div.innerHTML = `
+      <div class="item-linha">
+        <div><small>Nome do produto</small><input type="text" class="item-nome" placeholder="Ex: Toalha bordada"></div>
+        <button type="button" class="btn-small item-remover" title="Remover" onclick="this.closest('.item-pedido').remove(); atualizarTotaisIva();">✕</button>
+      </div>
+      <small>Descrição</small><input type="text" class="item-descricao" placeholder="Ex: Bordado com nome e anjo">
+      <div class="item-linha">
+        <div><small>Qtd.</small><input type="number" class="item-qtd" min="1" step="1" value="1" oninput="atualizarTotaisIva()"></div>
+        <div><small>Preço unit. s/ IVA (€)</small><input type="number" class="item-preco" min="0" step="0.01" placeholder="0.00" oninput="atualizarTotaisIva()"></div>
+      </div>
+      <div class="item-calculo">
+        <span>Sem IVA: <strong class="item-sem-iva">€ 0.00</strong></span>
+        <span>IVA 23%: <strong class="item-iva">€ 0.00</strong></span>
+        <span>Com IVA: <strong class="item-com-iva">€ 0.00</strong></span>
+      </div>`;
+    div.querySelector('.item-nome').value = item.nome || '';
+    div.querySelector('.item-descricao').value = item.descricao || '';
+    if (item.quantidade) div.querySelector('.item-qtd').value = item.quantidade;
+    if (item.preco) div.querySelector('.item-preco').value = item.preco;
+    document.getElementById('lista-itens-pedido').appendChild(div);
+    atualizarTotaisIva();
+}
+
+// Lê as linhas preenchidas e devolve-as com os valores calculados
+function lerItensPedido() {
+    return [...document.querySelectorAll('#lista-itens-pedido .item-pedido')].map(div => {
+        const quantidade = parseInt(div.querySelector('.item-qtd').value) || 1;
+        const preco = parseFloat(div.querySelector('.item-preco').value) || 0;
+        const semIva = arred(quantidade * preco);
+        const iva = arred(semIva * TAXA_IVA);
+        return {
+            nome: div.querySelector('.item-nome').value.trim(),
+            descricao: div.querySelector('.item-descricao').value.trim(),
+            quantidade, preco, sem_iva: semIva, iva, com_iva: arred(semIva + iva), _div: div
+        };
+    });
+}
+
+function totaisItens(itens) {
+    const semIva = arred(itens.reduce((s, i) => s + i.sem_iva, 0));
+    const iva = arred(itens.reduce((s, i) => s + i.iva, 0));
+    return { semIva, iva, comIva: arred(semIva + iva) };
+}
+
+function atualizarTotaisIva() {
+    const euro = n => `€ ${n.toFixed(2)}`;
+    const itens = lerItensPedido();
+    itens.forEach(i => {
+        i._div.querySelector('.item-sem-iva').innerText = euro(i.sem_iva);
+        i._div.querySelector('.item-iva').innerText = euro(i.iva);
+        i._div.querySelector('.item-com-iva').innerText = euro(i.com_iva);
+    });
+    const t = totaisItens(itens);
+    document.getElementById('total-sem-iva').innerText = euro(t.semIva);
+    document.getElementById('total-iva').innerText = euro(t.iva);
+    document.getElementById('total-com-iva').innerText = euro(t.comIva);
+    // O valor total do pedido passa a ser o total com IVA dos produtos
+    if (itens.some(i => i.sem_iva > 0)) document.getElementById('novo-valor').value = t.comIva.toFixed(2);
+}
+
+function itensValidos() {
+    return lerItensPedido()
+        .filter(i => i.nome || i.sem_iva > 0)
+        .map(({ _div, ...i }) => i);
+}
+
 function limparFormularioPedido() {
     ['pesquisa-cliente-input', 'novo-cliente-id', 'nova-descricao', 'novo-valor', 'nova-linha',
      'novo-valor-pago', 'nova-imagem', 'novo-dst', 'nova-data-producao', 'nova-data-entrega']
         .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    document.getElementById('lista-itens-pedido').innerHTML = '';
+    adicionarItemPedido();
 }
 
 function cancelarEdicao() {
@@ -462,7 +542,11 @@ function construirFormDataPedido(clienteId, status) {
     const formData = new FormData();
     formData.append('cliente_id', clienteId);
     formData.append('status', status);
-    formData.append('descricao', document.getElementById('nova-descricao').value);
+    const itens = itensValidos();
+    // Sem descrição principal, usa os nomes dos produtos
+    const descricao = document.getElementById('nova-descricao').value || itens.map(i => i.nome).filter(Boolean).join(', ');
+    formData.append('descricao', descricao);
+    formData.append('itens', JSON.stringify(itens));
     formData.append('origem_artigo', document.getElementById('nova-origem').value);
     formData.append('codigos_linhas', document.getElementById('nova-linha').value);
     formData.append('valor', document.getElementById('novo-valor').value || 0);
@@ -485,13 +569,32 @@ function construirFormDataPedido(clienteId, status) {
         formData.append('valor_pago', document.getElementById('novo-valor-pago').value);
     }
 
-    const inputDst = document.getElementById('novo-dst');
-    if (inputDst && inputDst.files[0]) formData.append('dst', inputDst.files[0]);
-
-    const inputImagem = document.getElementById('nova-imagem');
-    if (inputImagem && inputImagem.files[0]) formData.append('imagem', inputImagem.files[0]);
+    [...document.getElementById('novo-dst').files].forEach(f => formData.append('dst', f));
+    [...document.getElementById('nova-imagem').files].forEach(f => formData.append('imagem', f));
 
     return formData;
+}
+
+// --- Ficheiros PNG / DST (até 6 de cada por pedido) ---
+const MAX_FICHEIROS = 6;
+
+// arquivo_imagem / arquivo_dst guardam uma lista JSON de links; pedidos antigos têm um único link
+function lerUrls(valor) {
+    if (!valor) return [];
+    if (Array.isArray(valor)) return valor;
+    if (valor.startsWith('[')) {
+        try { return JSON.parse(valor); } catch (e) { return []; }
+    }
+    return [valor];
+}
+
+// jaExistentes: ficheiros que o pedido já tem (na edição)
+function validarLimiteFicheiros(input, jaExistentes = 0) {
+    if (input.files.length + jaExistentes <= MAX_FICHEIROS) return true;
+    alert(`Só pode ter até ${MAX_FICHEIROS} ficheiros de cada tipo por pedido.` +
+        (jaExistentes ? ` Este pedido já tem ${jaExistentes}.` : ''));
+    input.value = '';
+    return false;
 }
 
 // Guarda um pedido (status 'Pendente') ou um orçamento (status 'Orçamento')
@@ -501,7 +604,8 @@ async function guardarPedido(status = 'Pendente') {
     const msg = document.getElementById('msg-novo-pedido');
 
     if (!clienteId) { msg.style.color = 'red'; msg.innerText = 'Selecione um cliente.'; return; }
-    if (ehOrcamento && (!document.getElementById('nova-descricao').value || !(parseFloat(document.getElementById('novo-valor').value) > 0))) {
+    const temDescricao = document.getElementById('nova-descricao').value || itensValidos().some(i => i.nome);
+    if (ehOrcamento && (!temDescricao || !(parseFloat(document.getElementById('novo-valor').value) > 0))) {
         msg.style.color = 'red'; msg.innerText = 'Para gerar o orçamento, preencha a descrição e o valor.'; return;
     }
 
@@ -624,7 +728,6 @@ function abrirEditarPedido(id) {
       <div class="modal-content">
         <h3>Editar Pedido #<span id="edit-id-titulo"></span></h3>
         <input type="hidden" id="edit-id">
-        <input type="hidden" id="edit-arquivo-dst-atual">
 
         <div class="input-group">
           <label>Descrição</label>
@@ -639,12 +742,14 @@ function abrirEditarPedido(id) {
           <input type="number" step="0.01" id="edit-valor">
         </div>
         <div class="input-group">
-          <label>Atualizar Imagem PNG (opcional)</label>
-          <input type="file" id="edit-imagem" accept="image/png">
+          <label>Imagens PNG (até 6)</label>
+          <div id="edit-lista-imagem" class="ficheiros-atuais"></div>
+          <input type="file" id="edit-imagem" accept="image/png" multiple onchange="validarLimiteFicheiros(this, ficheirosEdicao.imagem.length)">
         </div>
         <div class="input-group">
-          <label>Atualizar Ficheiro DST (opcional)</label>
-          <input type="file" id="edit-dst" accept=".dst">
+          <label>Ficheiros DST (até 6)</label>
+          <div id="edit-lista-dst" class="ficheiros-atuais"></div>
+          <input type="file" id="edit-dst" accept=".dst" multiple onchange="validarLimiteFicheiros(this, ficheirosEdicao.dst.length)">
         </div>
 
         <div style="display:flex; justify-content:flex-end; gap:10px;">
@@ -661,11 +766,31 @@ function abrirEditarPedido(id) {
     document.getElementById('edit-descricao').value = p.descricao || '';
     document.getElementById('edit-linhas').value = p.codigos_linhas || '';
     document.getElementById('edit-valor').value = p.valor || '';
-    document.getElementById('edit-arquivo-dst-atual').value = p.arquivo_dst || '';
+    ficheirosEdicao = { imagem: lerUrls(p.arquivo_imagem), dst: lerUrls(p.arquivo_dst) };
+    renderizarFicheirosEdicao();
     document.getElementById('msg-editar-pedido').innerText = '';
     document.getElementById('edit-dst').value = '';
     document.getElementById('edit-imagem').value = '';
     modal.style.display = 'flex';
+}
+
+// Links dos ficheiros que o pedido em edição mantém
+let ficheirosEdicao = { imagem: [], dst: [] };
+
+function renderizarFicheirosEdicao() {
+    ['imagem', 'dst'].forEach(tipo => {
+        document.getElementById(`edit-lista-${tipo}`).innerHTML = ficheirosEdicao[tipo].map((url, i) => `
+          <div class="ficheiro-atual">
+            ${tipo === 'imagem' ? `<img src="${escapar(url)}" alt="">` : ''}
+            <a href="${escapar(url)}" target="_blank">${escapar(decodeURIComponent(url.split('/').pop()))}</a>
+            <button type="button" class="btn-small" title="Remover" onclick="removerFicheiroEdicao('${tipo}', ${i})">✕</button>
+          </div>`).join('');
+    });
+}
+
+function removerFicheiroEdicao(tipo, indice) {
+    ficheirosEdicao[tipo].splice(indice, 1);
+    renderizarFicheirosEdicao();
 }
 
 async function guardarEdicaoPedido() {
@@ -677,20 +802,23 @@ async function guardarEdicaoPedido() {
     formData.append('descricao', document.getElementById('edit-descricao').value);
     formData.append('codigos_linhas', document.getElementById('edit-linhas').value);
     formData.append('valor', document.getElementById('edit-valor').value || 0);
-    formData.append('arquivo_dst', document.getElementById('edit-arquivo-dst-atual').value);
+    formData.append('arquivo_dst', JSON.stringify(ficheirosEdicao.dst));
+    formData.append('arquivo_imagem', JSON.stringify(ficheirosEdicao.imagem));
 
-    // Reenvia os restantes campos (incluindo arquivo_imagem atual) para não serem perdidos
+    // Reenvia os restantes campos para não serem perdidos
     for (const key in pAntigo) {
-        if (!['descricao', 'codigos_linhas', 'valor', 'arquivo_dst', 'clientes'].includes(key)) {
+        if (!['descricao', 'codigos_linhas', 'valor', 'arquivo_dst', 'arquivo_imagem', 'clientes', 'itens'].includes(key)) {
             formData.append(key, pAntigo[key] !== null ? pAntigo[key] : '');
         }
     }
+    if (Array.isArray(pAntigo.itens)) formData.append('itens', JSON.stringify(pAntigo.itens));
 
     const inputDst = document.getElementById('edit-dst');
-    if (inputDst.files[0]) formData.append('dst', inputDst.files[0]);
-
     const inputImagem = document.getElementById('edit-imagem');
-    if (inputImagem.files[0]) formData.append('imagem', inputImagem.files[0]);
+    if (!validarLimiteFicheiros(inputDst, ficheirosEdicao.dst.length) ||
+        !validarLimiteFicheiros(inputImagem, ficheirosEdicao.imagem.length)) return;
+    [...inputDst.files].forEach(f => formData.append('dst', f));
+    [...inputImagem.files].forEach(f => formData.append('imagem', f));
 
     try {
         msg.style.color = '#8C5E3C'; msg.innerText = 'A atualizar pedido...';
@@ -972,36 +1100,74 @@ function gerarPDF(id) {
     doc.text(String(telefone), 39, 66);
 
     // ---------- Tabela ----------
-    doc.autoTable({
+    const itens = Array.isArray(p.itens) ? p.itens : [];
+    const estiloTabela = {
         startY: 79,
         margin: { left: MARGEM, right: 14 },
         theme: 'grid',
-        head: [['NOME DO PRODUTO / SERVIÇO', 'TAMANHO / QTD', 'PREÇO', 'SUB-TOTAL']],
-        body: [[
-            `${p.descricao || ''}\n${origem}`,
-            `${tamanhos} / ${qtd} un.`,
-            euro(valorTotal / qtd),
-            euro(valorTotal)
-        ]],
-        columnStyles: {
-            0: { cellWidth: 90 },
-            1: { cellWidth: 38.5 },
-            2: { cellWidth: 25.5 },
-            3: { cellWidth: 28 }
-        },
         styles: { font: 'helvetica', fontSize: 10, textColor: CINZA, lineColor: [200, 200, 200], lineWidth: 0.2, cellPadding: { top: 6, bottom: 6, left: 5, right: 4 } },
         headStyles: { fillColor: CASTANHO, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9.5, lineWidth: 0, cellPadding: { top: 5, bottom: 5, left: 5, right: 4 } }
-    });
+    };
+
+    if (itens.length) {
+        doc.autoTable({
+            ...estiloTabela,
+            head: [['PRODUTO / DESCRIÇÃO', 'QTD.', 'PREÇO S/ IVA', 'IVA 23%', 'TOTAL']],
+            body: itens.map(i => [
+                i.descricao ? `${i.nome}\n${i.descricao}` : i.nome,
+                String(i.quantidade),
+                euro(i.preco),
+                euro(i.iva),
+                euro(i.com_iva)
+            ]),
+            columnStyles: {
+                0: { cellWidth: 72 },
+                1: { cellWidth: 20, halign: 'center' },
+                2: { cellWidth: 32, halign: 'right' },
+                3: { cellWidth: 28, halign: 'right' },
+                4: { cellWidth: 30, halign: 'right' }
+            }
+        });
+    } else {
+        doc.autoTable({
+            ...estiloTabela,
+            head: [['NOME DO PRODUTO / SERVIÇO', 'TAMANHO / QTD', 'PREÇO', 'SUB-TOTAL']],
+            body: [[
+                `${p.descricao || ''}\n${origem}`,
+                `${tamanhos} / ${qtd} un.`,
+                euro(valorTotal / qtd),
+                euro(valorTotal)
+            ]],
+            columnStyles: {
+                0: { cellWidth: 90 },
+                1: { cellWidth: 38.5 },
+                2: { cellWidth: 25.5 },
+                3: { cellWidth: 28 }
+            }
+        });
+    }
 
     // ---------- Total ----------
     let y = doc.lastAutoTable.finalY + 9;
+    if (itens.length) {
+        const t = totaisItens(itens);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(...CINZA);
+        doc.text('Total sem IVA:', 160, y, { align: 'right' });
+        doc.text(euro(t.semIva), DIREITA, y, { align: 'right' });
+        y += 6;
+        doc.text('IVA (23%):', 160, y, { align: 'right' });
+        doc.text(euro(t.iva), DIREITA, y, { align: 'right' });
+        y += 8;
+    }
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(0, 0, 0);
     doc.text('TOTAL A PAGAR:', 160, y, { align: 'right' });
     doc.setFontSize(14);
     doc.setTextColor(...CASTANHO);
-    doc.text(euro(valorTotal), DIREITA, y, { align: 'right' });
+    doc.text(euro(itens.length ? totaisItens(itens).comIva : valorTotal), DIREITA, y, { align: 'right' });
 
     // ---------- Dados de pagamento ----------
     y += 17;
@@ -1049,7 +1215,9 @@ function gerarPDF(id) {
         ]],
         ['4. Valores e Pagamentos', [
             ['n', 'Os valores apresentados podem sofrer alterações sem aviso prévio.'],
-            ['v', 'Aos valores apresentados acresce o IVA à taxa em vigor.'],
+            itens.length
+                ? ['v', 'Os valores apresentados incluem IVA à taxa de 23%.']
+                : ['v', 'Aos valores apresentados acresce o IVA à taxa em vigor.'],
             ['n', 'Condição de Pagamento: O prazo de execução começará a contar a partir da conclusão e\n  pagamento do processo.']
         ]]
     ];

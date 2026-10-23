@@ -90,6 +90,18 @@ h1, h2, h3 { color: #4A2511; margin-top: 0; }
 /* ========================================== */
 .caixa-ficheiros { border: 2px dashed #C38D59; padding: 15px; border-radius: 6px; background: #FAF6F2; margin-bottom: 20px; }
 .caixa-bordaveiro { background-color: #FAF6F2; border-left: 4px solid #8C5E3C; padding: 15px; border-radius: 0 6px 6px 0; margin-bottom: 15px; display: none; }
+/* Produtos do pedido com IVA */
+.caixa-produtos { border: 1px solid #EADDCE; padding: 15px; border-radius: 6px; background: #FAF6F2; margin-bottom: 15px; }
+.item-pedido { background: white; border: 1px solid #EADDCE; border-radius: 6px; padding: 10px; margin-bottom: 10px; }
+.item-pedido input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-family: inherit; margin-bottom: 8px; }
+.item-pedido small { display: block; color: #666; margin-bottom: 3px; }
+.item-linha { display: flex; gap: 8px; }
+.item-linha > div { flex: 1; min-width: 0; }
+.item-remover { background: #c0392b; flex-shrink: 0; height: 34px; }
+.item-calculo { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; font-size: 13px; color: #593122; border-top: 1px dashed #EADDCE; padding-top: 6px; }
+.totais-iva { margin-top: 12px; border-top: 2px solid #EADDCE; padding-top: 10px; font-size: 14px; }
+.totais-iva > div { display: flex; justify-content: space-between; padding: 3px 0; color: #4A2511; }
+.totais-iva .total-final { font-size: 16px; border-top: 1px solid #EADDCE; margin-top: 4px; padding-top: 6px; color: #8C5E3C; }
 .badge-estoque { padding: 4px 8px; border-radius: 4px; color: white; font-size: 12px; font-weight: bold; display: inline-block; margin-bottom: 8px; }
 .bg-farda { background-color: #8C5E3C; }
 .bg-linha { background-color: #A67B5B; }
@@ -101,6 +113,17 @@ h1, h2, h3 { color: #4A2511; margin-top: 0; }
   width: 80px; height: 80px; object-fit: contain; background: #FAF6F2;
   border: 1px solid #EADDCE; border-radius: 6px; flex-shrink: 0; display: block;
 }
+.thumbs-pedido { display: flex; gap: 6px; flex-wrap: wrap; flex-shrink: 0; }
+/* Com várias imagens, as miniaturas ficam numa linha própria por cima do texto */
+.pedido-corpo.varias-imagens { flex-direction: column; }
+.pedido-corpo.varias-imagens .thumb-pedido { width: 64px; height: 64px; }
+
+/* Ficheiros atuais no modal de edição */
+.ficheiros-atuais { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.ficheiro-atual { display: flex; align-items: center; gap: 8px; font-size: 13px; background: white; border: 1px solid #EADDCE; border-radius: 4px; padding: 4px 8px; }
+.ficheiro-atual a { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #593122; }
+.ficheiro-atual img { width: 32px; height: 32px; object-fit: contain; }
+.ficheiro-atual button { background: #c0392b; padding: 2px 8px; }
 
 /* ========================================== */
 /* 7. MODAIS (JANELAS FLUTUANTES)             */

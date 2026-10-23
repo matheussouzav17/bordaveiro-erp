@@ -16,14 +16,15 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 // Multer guarda temporariamente os ficheiros em memória
 const upload = multer({ storage: multer.memoryStorage() });
-const camposFicheiros = upload.fields([{ name: 'dst' }, { name: 'imagem' }]);
+const MAX_FICHEIROS = 6; // por tipo (PNG e DST), por pedido
+const camposFicheiros = upload.fields([{ name: 'dst', maxCount: MAX_FICHEIROS }, { name: 'imagem', maxCount: MAX_FICHEIROS }]);
 
 // Envia um ficheiro para o Storage e devolve o link público.
 // O nome é limpo porque espaços e acentos fazem o upload falhar.
-async function enviarFicheiro(ficheiro, bucket, prefixo) {
+async function enviarFicheiro(ficheiro, bucket, prefixo, indice = 0) {
   if (!ficheiro) return null;
   const nomeSeguro = ficheiro.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const nomeUnico = `${prefixo}_${Date.now()}_${nomeSeguro}`;
+  const nomeUnico = `${prefixo}_${Date.now()}_${indice}_${nomeSeguro}`;
 
   const { error } = await supabase.storage
     .from(bucket)
@@ -33,9 +34,42 @@ async function enviarFicheiro(ficheiro, bucket, prefixo) {
   return supabase.storage.from(bucket).getPublicUrl(nomeUnico).data.publicUrl;
 }
 
+function enviarFicheiros(ficheiros = [], bucket, prefixo) {
+  return Promise.all(ficheiros.map((f, i) => enviarFicheiro(f, bucket, prefixo, i)));
+}
+
+// arquivo_imagem / arquivo_dst guardam uma lista JSON de links;
+// pedidos antigos têm um único link em texto simples
+function lerUrls(valor) {
+  if (!valor) return [];
+  if (Array.isArray(valor)) return valor;
+  if (valor.startsWith('[')) {
+    try { return JSON.parse(valor); } catch { return []; }
+  }
+  return [valor];
+}
+
+function guardarUrls(urls) {
+  const lista = urls.filter(Boolean).slice(0, MAX_FICHEIROS);
+  return lista.length ? JSON.stringify(lista) : null;
+}
+
+// Linhas de produtos (JSON enviado pelo formulário); undefined mantém o valor atual na edição
+function lerItens(texto) {
+  if (texto === undefined) return undefined;
+  try {
+    const itens = JSON.parse(texto);
+    return Array.isArray(itens) && itens.length ? itens : null;
+  } catch {
+    return null;
+  }
+}
+
 // Campos do pedido partilhados entre criação e edição
 function camposPedido(dados) {
+  const itens = lerItens(dados.itens);
   return {
+    ...(itens !== undefined && { itens }),
     descricao: dados.descricao,
     origem_artigo: dados.origem_artigo,
     codigos_linhas: dados.codigos_linhas,
@@ -125,8 +159,8 @@ app.get('/pedidos', async (req, res) => {
 app.post('/pedidos', camposFicheiros, async (req, res) => {
   try {
     const dados = req.body;
-    const urlDst = await enviarFicheiro(req.files?.dst?.[0], 'matrizes', 'dst');
-    const urlImagem = await enviarFicheiro(req.files?.imagem?.[0], 'imagens', 'img');
+    const urlDst = guardarUrls(await enviarFicheiros(req.files?.dst, 'matrizes', 'dst'));
+    const urlImagem = guardarUrls(await enviarFicheiros(req.files?.imagem, 'imagens', 'img'));
 
     const { data, error } = await supabase
       .from('pedidos')
@@ -152,9 +186,9 @@ app.put('/pedidos/:id', camposFicheiros, async (req, res) => {
     const { id } = req.params;
     const dados = req.body;
 
-    // Mantém o ficheiro antigo se não vier um novo
-    const urlDst = (await enviarFicheiro(req.files?.dst?.[0], 'matrizes', 'dst')) || dados.arquivo_dst || null;
-    const urlImagem = (await enviarFicheiro(req.files?.imagem?.[0], 'imagens', 'img')) || dados.arquivo_imagem || null;
+    // Mantém os ficheiros que o utilizador não removeu e junta os novos
+    const urlDst = guardarUrls([...lerUrls(dados.arquivo_dst), ...(await enviarFicheiros(req.files?.dst, 'matrizes', 'dst'))]);
+    const urlImagem = guardarUrls([...lerUrls(dados.arquivo_imagem), ...(await enviarFicheiros(req.files?.imagem, 'imagens', 'img'))]);
 
     const { data, error } = await supabase
       .from('pedidos')
