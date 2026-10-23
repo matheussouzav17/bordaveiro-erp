@@ -65,6 +65,7 @@ async function fazerLogin() {
         if (resposta.ok) {
             localStorage.setItem('token_bordaveiro', dados.token);
             localStorage.setItem('perfil_bordaveiro', dados.perfil);
+            localStorage.setItem('nome_bordaveiro', dados.nome || '');
             mostrarDashboard();
         } else {
             msgErro.innerText = dados.erro || 'Não foi possível iniciar sessão.';
@@ -102,19 +103,30 @@ function recuperarSenha() {
 }
 
 function mudarPagina(pagina) {
-    ['pedidos', 'estoque', 'estatisticas', 'admin'].forEach(p => {
+    ['pedidos', 'estoque', 'estatisticas', 'admin', 'feedback'].forEach(p => {
         document.getElementById(`pagina-${p}`).style.display = 'none';
         document.getElementById(`nav-${p}`).className = 'btn-nav btn-nav-inactive';
     });
 
-    const displayMode = (pagina === 'estatisticas') ? 'block' : 'grid';
-    document.getElementById(`pagina-${pagina}`).style.display = displayMode;
+    const ehAdmin = localStorage.getItem('perfil_bordaveiro') === 'admin';
+    // Funcionários só veem o chat, que fica sozinho e centrado
+    const soChat = pagina === 'feedback' && !ehAdmin;
+    const displayMode = (pagina === 'estatisticas' || soChat) ? 'block' : 'grid';
+    const elPagina = document.getElementById(`pagina-${pagina}`);
+    elPagina.style.display = displayMode;
+    elPagina.style.maxWidth = soChat ? '650px' : '';
+    elPagina.style.margin = soChat ? '20px auto 0' : '';
     document.getElementById(`nav-${pagina}`).className = 'btn-nav btn-nav-active';
 
     if (pagina === 'pedidos') carregarPedidos();
     if (pagina === 'estoque') carregarEstoque();
     if (pagina === 'estatisticas') carregarPedidos().then(calcularEstatisticasGlobais);
     if (pagina === 'admin') carregarUtilizadores();
+    if (pagina === 'feedback') {
+        document.getElementById('coluna-feedback-admin').style.display = ehAdmin ? 'block' : 'none';
+        if (!document.getElementById('chat-mensagens').children.length) iniciarChat();
+        if (ehAdmin) carregarFeedback();
+    }
 }
 
 // ============================================================================
@@ -714,6 +726,175 @@ async function criarPedidoDP() {
     } catch (e) {
         msg.style.color = 'red'; msg.innerText = 'Não foi possível guardar o pedido. Tente novamente.';
     }
+}
+
+// ============================================================================
+// RECLAMAÇÕES E SUGESTÕES (chat guiado)
+// ============================================================================
+
+const ASSUNTOS_FEEDBACK = ['Pedidos', 'Estoque', 'Sistema / App', 'Atendimento', 'Outro'];
+let conversa = {};          // { tipo, assunto, mensagem } da mensagem em curso
+let aguardaTexto = false;   // true quando o chat espera a descrição escrita
+
+function bolhaChat(texto, autor = 'bot') {
+    const caixa = document.getElementById('chat-mensagens');
+    const div = document.createElement('div');
+    div.className = `chat-bolha ${autor}`;
+    div.textContent = texto;
+    caixa.appendChild(div);
+    caixa.scrollTop = caixa.scrollHeight;
+    return div;
+}
+
+// Mostra "a escrever..." por instantes antes da resposta do assistente
+function respostaBot(texto, opcoes = []) {
+    definirOpcoesChat([]);
+    const aEscrever = bolhaChat('a escrever...', 'bot escrever');
+    return new Promise(resolve => setTimeout(() => {
+        aEscrever.remove();
+        bolhaChat(texto);
+        definirOpcoesChat(opcoes);
+        resolve();
+    }, 500));
+}
+
+// opcoes: [{ texto, acao }]
+function definirOpcoesChat(opcoes) {
+    const div = document.getElementById('chat-opcoes');
+    div.innerHTML = '';
+    opcoes.forEach(({ texto, acao }) => {
+        const btn = document.createElement('button');
+        btn.textContent = texto;
+        btn.onclick = () => { bolhaChat(texto, 'utilizador'); acao(); };
+        div.appendChild(btn);
+    });
+}
+
+function ativarTextoChat(ativo) {
+    aguardaTexto = ativo;
+    const texto = document.getElementById('chat-texto');
+    texto.disabled = !ativo;
+    document.getElementById('chat-enviar').disabled = !ativo;
+    if (ativo) texto.focus();
+}
+
+function iniciarChat() {
+    document.getElementById('chat-mensagens').innerHTML = '';
+    const nome = (localStorage.getItem('nome_bordaveiro') || '').split(' ')[0];
+    perguntarTipo(`Olá${nome ? ', ' + nome : ''}! Sou o assistente da Bordaveiro.\nO que gostaria de nos enviar?`);
+}
+
+function perguntarTipo(texto) {
+    conversa = {};
+    ativarTextoChat(false);
+    respostaBot(texto, ['Reclamação', 'Sugestão'].map(tipo => ({
+        texto: tipo, acao: () => { conversa.tipo = tipo; perguntarAssunto(); }
+    })));
+}
+
+function perguntarAssunto() {
+    respostaBot(`Sobre que assunto é a sua ${conversa.tipo.toLowerCase()}?`, ASSUNTOS_FEEDBACK.map(assunto => ({
+        texto: assunto, acao: () => { conversa.assunto = assunto; pedirMensagem(); }
+    })));
+}
+
+async function pedirMensagem() {
+    await respostaBot(conversa.tipo === 'Reclamação'
+        ? 'Lamentamos o incómodo. Descreva o que aconteceu, com o máximo de detalhe possível.'
+        : 'Ótimo! Conte-nos a sua ideia.');
+    ativarTextoChat(true);
+}
+
+function enviarTextoChat() {
+    const campo = document.getElementById('chat-texto');
+    const texto = campo.value.trim();
+    if (!aguardaTexto || !texto) return;
+    campo.value = '';
+    ativarTextoChat(false);
+    bolhaChat(texto, 'utilizador');
+    conversa.mensagem = texto;
+    confirmarEnvio();
+}
+
+function confirmarEnvio() {
+    respostaBot(`Resumo:\n• Tipo: ${conversa.tipo}\n• Assunto: ${conversa.assunto}\n\nPosso enviar?`, [
+        { texto: 'Enviar', acao: gravarFeedback },
+        { texto: 'Reescrever mensagem', acao: pedirMensagem },
+        { texto: 'Cancelar', acao: () => perguntarTipo('Sem problema, nada foi enviado. Quer enviar outra coisa?') }
+    ]);
+}
+
+async function gravarFeedback() {
+    definirOpcoesChat([]);
+    try {
+        const res = await fetch(`${URL_API}/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...conversa, autor: localStorage.getItem('nome_bordaveiro') || 'Desconhecido' })
+        });
+        if (!res.ok) throw new Error();
+        const criado = await res.json();
+        await respostaBot(`Obrigado! A sua ${conversa.tipo.toLowerCase()} foi registada com o nº ${criado.id}. A administração vai analisá-la.`,
+            [{ texto: 'Enviar outra', acao: () => perguntarTipo('O que gostaria de enviar agora?') }]);
+        if (localStorage.getItem('perfil_bordaveiro') === 'admin') carregarFeedback();
+    } catch (e) {
+        respostaBot('Não foi possível enviar a mensagem. Verifique a ligação e tente novamente.', [
+            { texto: 'Tentar novamente', acao: gravarFeedback },
+            { texto: 'Cancelar', acao: () => perguntarTipo('Quer enviar outra coisa?') }
+        ]);
+    }
+}
+
+// --- Lista de mensagens recebidas (admin) ---
+let feedbackGlobais = [];
+let filtroFeedback = 'Novo';
+
+async function carregarFeedback() {
+    try {
+        const res = await fetch(`${URL_API}/feedback`);
+        feedbackGlobais = await res.json();
+    } catch (e) {
+        feedbackGlobais = [];
+    }
+    renderizarFeedback();
+}
+
+function filtrarFeedback(estado) {
+    filtroFeedback = estado;
+    ['Novo', 'Resolvido'].forEach(e =>
+        document.getElementById(`tab-feedback-${e}`).className = `tab-btn ${e === estado ? 'tab-active' : 'tab-inactive'}`);
+    renderizarFeedback();
+}
+
+function renderizarFeedback() {
+    const lista = feedbackGlobais.filter(f => (f.estado || 'Novo') === filtroFeedback);
+    const div = document.getElementById('lista-feedback');
+    if (!lista.length) {
+        div.innerHTML = `<p style="text-align: center; color: #888; margin-top: 20px;">${filtroFeedback === 'Novo' ? 'Não há mensagens por tratar.' : 'Ainda não há mensagens resolvidas.'}</p>`;
+        return;
+    }
+    div.innerHTML = lista.map(f => {
+        const data = f.created_at ? new Date(f.created_at).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' }) : '';
+        const novoEstado = filtroFeedback === 'Novo' ? 'Resolvido' : 'Novo';
+        return `
+      <div class="feedback-item ${f.tipo === 'Reclamação' ? 'reclamacao' : ''}">
+        <span class="badge-feedback">${escapar(f.tipo)}</span><strong>#${f.id} · ${escapar(f.assunto || '')}</strong>
+        <p>${escapar(f.mensagem)}</p>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+          <small>${escapar(f.autor || 'Desconhecido')} · ${data}</small>
+          <button class="btn-small" style="background:${novoEstado === 'Resolvido' ? '#27ae60' : '#B08D6A'};" onclick="mudarEstadoFeedback(${f.id}, '${novoEstado}')">${novoEstado === 'Resolvido' ? 'Marcar como resolvida' : 'Reabrir'}</button>
+        </div>
+      </div>`;
+    }).join('');
+}
+
+async function mudarEstadoFeedback(id, estado) {
+    await fetch(`${URL_API}/feedback/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado })
+    });
+    carregarFeedback();
 }
 
 // --- Edição de pedidos ---

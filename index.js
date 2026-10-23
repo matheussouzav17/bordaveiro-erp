@@ -236,5 +236,36 @@ app.delete('/estoque/:id', async (req, res) => {
   res.json({ sucesso: true });
 });
 
+// ==========================================
+// 6. RECLAMAÇÕES E SUGESTÕES
+// ==========================================
+app.get('/feedback', async (req, res) => {
+  const { data } = await supabase.from('feedback').select('*').order('id', { ascending: false });
+  res.json(data || []);
+});
+
+app.post('/feedback', async (req, res) => {
+  const { tipo, assunto, mensagem, autor } = req.body;
+  if (!['Reclamação', 'Sugestão'].includes(tipo) || !String(mensagem || '').trim()) {
+    return res.status(400).json({ erro: 'Dados inválidos.' });
+  }
+
+  const { data, error } = await supabase
+    .from('feedback')
+    .insert([{ tipo, assunto, mensagem: String(mensagem).trim(), autor, estado: 'Novo' }])
+    .select();
+
+  if (error) {
+    console.error(error);
+    return res.status(500).json({ erro: 'Erro ao guardar a mensagem.' });
+  }
+  res.json(data[0]);
+});
+
+app.patch('/feedback/:id', async (req, res) => {
+  await supabase.from('feedback').update({ estado: req.body.estado }).eq('id', req.params.id);
+  res.json({ sucesso: true });
+});
+
 // Ligar o servidor (no fim, para garantir que todas as rotas estão ativas)
 app.listen(3000, () => console.log('Servidor Bordaveiro a correr na porta 3000.'));
