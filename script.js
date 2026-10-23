@@ -6,6 +6,26 @@
 // Em desenvolvimento (Live Server, 127.0.0.1, ficheiro aberto diretamente) a API corre à parte na porta 3000
 const ehLocal = ['localhost', '127.0.0.1'].includes(window.location.hostname) || window.location.protocol === 'file:';
 const URL_API = ehLocal && window.location.port !== '3000' ? 'http://localhost:3000' : '';
+// fetch com o token da sessão; se a sessão expirou, volta ao ecrã de login
+async function api(url, opcoes = {}) {
+    const token = localStorage.getItem('token_bordaveiro');
+    const resposta = await fetch(url, {
+        ...opcoes,
+        headers: { ...(opcoes.headers || {}), Authorization: `Bearer ${token}` }
+    });
+    if (resposta.status === 401) {
+        // Vários pedidos podem falhar ao mesmo tempo: avisa só uma vez
+        if (!api.sessaoTerminada) {
+            api.sessaoTerminada = true;
+            localStorage.clear();
+            alert('A sua sessão expirou. Inicie sessão novamente.');
+            location.reload();
+        }
+        throw new Error('Sessão expirada');
+    }
+    return resposta;
+}
+
 let abaAtual = 'pendentes';
 let pedidosGlobais = [];
 let estoqueGlobais = [];
@@ -135,7 +155,7 @@ function mudarPagina(pagina) {
 
 async function carregarUtilizadores() {
     try {
-        const resposta = await fetch(`${URL_API}/utilizadores`);
+        const resposta = await api(`${URL_API}/utilizadores`);
         const users = await resposta.json();
         const div = document.getElementById('lista-utilizadores');
         div.innerHTML = '';
@@ -175,7 +195,7 @@ async function criarUtilizador() {
 
     try {
         msg.style.color = '#8C5E3C'; msg.innerText = 'A criar conta...';
-        const resposta = await fetch(`${URL_API}/utilizadores`, {
+        const resposta = await api(`${URL_API}/utilizadores`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ nome, email, senha, perfil })
@@ -199,7 +219,7 @@ async function criarUtilizador() {
 
 async function apagarUtilizador(id) {
     if (!confirm('Confirma a eliminação desta conta? Esta ação não pode ser revertida.')) return;
-    await fetch(`${URL_API}/utilizadores/${id}`, { method: 'DELETE' });
+    await api(`${URL_API}/utilizadores/${id}`, { method: 'DELETE' });
     carregarUtilizadores();
 }
 
@@ -208,7 +228,7 @@ async function apagarUtilizador(id) {
 // ============================================================================
 
 async function carregarClientes() {
-    const resposta = await fetch(`${URL_API}/clientes`);
+    const resposta = await api(`${URL_API}/clientes`);
     clientesGlobais = await resposta.json();
     verificarAniversarios();
 }
@@ -308,7 +328,7 @@ async function criarCliente() {
     if (!nome) { msg.style.color = 'red'; msg.innerText = 'O nome é obrigatório.'; return; }
 
     try {
-        const res = await fetch(`${URL_API}/clientes`, {
+        const res = await api(`${URL_API}/clientes`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ nome, email, telefone, nif, aniversario })
@@ -356,7 +376,7 @@ function mudarAba(aba) {
 }
 
 async function carregarPedidos() {
-    const resposta = await fetch(`${URL_API}/pedidos`);
+    const resposta = await api(`${URL_API}/pedidos`);
     pedidosGlobais = await resposta.json();
     renderizarPedidos();
 }
@@ -624,7 +644,7 @@ async function guardarPedido(status = 'Pendente') {
     try {
         msg.style.color = '#8C5E3C';
         msg.innerText = ehOrcamento ? 'A gerar orçamento...' : 'A guardar pedido...';
-        const res = await fetch(`${URL_API}/pedidos`, { method: 'POST', body: construirFormDataPedido(clienteId, status) });
+        const res = await api(`${URL_API}/pedidos`, { method: 'POST', body: construirFormDataPedido(clienteId, status) });
         if (!res.ok) throw new Error('Falha ao guardar.');
         const criado = await res.json();
 
@@ -655,7 +675,7 @@ function guardarOrcamento() { return guardarPedido('Orçamento'); }
 async function aprovarOrcamento(id) {
     if (!confirm('Confirma que o cliente aprovou este orçamento? Será convertido em pedido.')) return;
     try {
-        const res = await fetch(`${URL_API}/pedidos/${id}/status`, {
+        const res = await api(`${URL_API}/pedidos/${id}/status`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: 'Pendente' })
@@ -669,7 +689,7 @@ async function aprovarOrcamento(id) {
 }
 
 async function mudarStatus(id, novoStatus) {
-    await fetch(`${URL_API}/pedidos/${id}/status`, {
+    await api(`${URL_API}/pedidos/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: novoStatus })
@@ -679,7 +699,7 @@ async function mudarStatus(id, novoStatus) {
 
 async function apagarPedido(id) {
     if (!confirm('Confirma a eliminação deste pedido? Esta ação não pode ser revertida.')) return;
-    await fetch(`${URL_API}/pedidos/${id}`, { method: 'DELETE' });
+    await api(`${URL_API}/pedidos/${id}`, { method: 'DELETE' });
     carregarPedidos();
 }
 
@@ -716,7 +736,7 @@ async function criarPedidoDP() {
 
     try {
         msg.style.color = '#8C5E3C'; msg.innerText = 'A guardar...';
-        const res = await fetch(`${URL_API}/pedidos`, { method: 'POST', body: formData });
+        const res = await api(`${URL_API}/pedidos`, { method: 'POST', body: formData });
         if (!res.ok) throw new Error('Falha ao guardar.');
 
         ['dp-descricao', 'dp-valor', 'dp-data-entrega', 'dp-imagem', 'dp-dst'].forEach(id => document.getElementById(id).value = '');
@@ -827,10 +847,10 @@ function confirmarEnvio() {
 async function gravarFeedback() {
     definirOpcoesChat([]);
     try {
-        const res = await fetch(`${URL_API}/feedback`, {
+        const res = await api(`${URL_API}/feedback`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...conversa, autor: localStorage.getItem('nome_bordaveiro') || 'Desconhecido' })
+            body: JSON.stringify(conversa)
         });
         if (!res.ok) throw new Error();
         const criado = await res.json();
@@ -851,7 +871,7 @@ let filtroFeedback = 'Novo';
 
 async function carregarFeedback() {
     try {
-        const res = await fetch(`${URL_API}/feedback`);
+        const res = await api(`${URL_API}/feedback`);
         feedbackGlobais = await res.json();
     } catch (e) {
         feedbackGlobais = [];
@@ -889,7 +909,7 @@ function renderizarFeedback() {
 }
 
 async function mudarEstadoFeedback(id, estado) {
-    await fetch(`${URL_API}/feedback/${id}`, {
+    await api(`${URL_API}/feedback/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ estado })
@@ -965,7 +985,7 @@ function renderizarFicheirosEdicao() {
         document.getElementById(`edit-lista-${tipo}`).innerHTML = ficheirosEdicao[tipo].map((url, i) => `
           <div class="ficheiro-atual">
             ${tipo === 'imagem' ? `<img src="${escapar(url)}" alt="">` : ''}
-            <a href="${escapar(url)}" target="_blank">${escapar(decodeURIComponent(url.split('/').pop()))}</a>
+            <a href="${escapar(url)}" target="_blank">${escapar(decodeURIComponent(url.split('?')[0].split('/').pop()))}</a>
             <button type="button" class="btn-small" title="Remover" onclick="removerFicheiroEdicao('${tipo}', ${i})">✕</button>
           </div>`).join('');
     });
@@ -1005,7 +1025,7 @@ async function guardarEdicaoPedido() {
 
     try {
         msg.style.color = '#8C5E3C'; msg.innerText = 'A atualizar pedido...';
-        const res = await fetch(`${URL_API}/pedidos/${id}`, { method: 'PUT', body: formData });
+        const res = await api(`${URL_API}/pedidos/${id}`, { method: 'PUT', body: formData });
         if (!res.ok) throw new Error('Erro ao atualizar.');
 
         msg.style.color = 'green'; msg.innerText = 'Pedido atualizado com sucesso.';
@@ -1029,7 +1049,7 @@ function mudarFormularioEstoque() {
 }
 
 async function carregarEstoque() {
-    const resposta = await fetch(`${URL_API}/estoque`);
+    const resposta = await api(`${URL_API}/estoque`);
     estoqueGlobais = await resposta.json();
     renderizarEstoque();
 }
@@ -1066,7 +1086,7 @@ async function guardarEstoque() {
     if (!descricao) { msg.style.color = 'red'; msg.innerText = 'Preencha a descrição.'; return; }
 
     try {
-        const res = await fetch(`${URL_API}/estoque`, {
+        const res = await api(`${URL_API}/estoque`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ categoria, descricao, quantidade, tamanho, marca, codigo_linha })
@@ -1085,7 +1105,7 @@ async function guardarEstoque() {
 
 async function apagarEstoque(id) {
     if (!confirm('Confirma a remoção deste artigo do estoque?')) return;
-    await fetch(`${URL_API}/estoque/${id}`, { method: 'DELETE' });
+    await api(`${URL_API}/estoque/${id}`, { method: 'DELETE' });
     carregarEstoque();
 }
 
