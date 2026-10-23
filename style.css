@@ -193,6 +193,9 @@ h1, h2, h3 { color: #4A2511; margin-top: 0; }
 .stat-card.clicavel:hover { transform: translateY(-3px); box-shadow: 0 8px 14px rgba(0,0,0,0.1); }
 .stat-title { font-size: 13px; text-transform: uppercase; color: #7f8c8d; letter-spacing: 0.5px; font-weight: bold; margin-bottom: 10px; }
 .stat-value { font-size: 32px; font-weight: bold; margin: 0; }
+.stat-detalhe { font-size: 12px; color: #7f8c8d; margin: 8px 0 0 0; line-height: 1.5; }
+.stat-detalhe:empty { display: none; }
+.stat-aviso { font-size: 12px; color: #8C5E3C; background: #FAF6F2; border-left: 4px solid #E5A83B; padding: 10px 12px; margin: 20px 0 0 0; border-radius: 0 6px 6px 0; }
 
 /* ========================================== */
 /* 10. ADAPTAÇÃO PARA TELEMÓVEL (MOBILE)      */

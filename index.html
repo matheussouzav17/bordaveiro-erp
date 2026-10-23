@@ -318,10 +318,17 @@
             <div class="stat-card clicavel" style="border-color: #8C5E3C;" title="Descarregar relatório de faturação geral" onclick="exportarRelatorio('faturacao')">
               <div class="stat-title">Faturação Geral</div>
               <p class="stat-value" id="stat-faturado" style="color: #8C5E3C;">€ 0.00</p>
+              <p class="stat-detalhe" id="stat-faturado-detalhe"></p>
+            </div>
+            <div class="stat-card clicavel" style="border-color: #c0392b;" title="Descarregar relatório de faturação com IVA discriminado" onclick="exportarRelatorio('faturacao')">
+              <div class="stat-title">IVA a Entregar (23%)</div>
+              <p class="stat-value" id="stat-iva" style="color: #c0392b;">€ 0.00</p>
+              <p class="stat-detalhe">IVA dos pedidos concluídos</p>
             </div>
             <div class="stat-card clicavel" style="border-color: #A67B5B;" title="Descarregar relatório de faturação DP" onclick="exportarRelatorio('dp')">
               <div class="stat-title">Exclusivo DP</div>
               <p class="stat-value" id="stat-faturado-dp" style="color: #A67B5B;">€ 0.00</p>
+              <p class="stat-detalhe" id="stat-faturado-dp-detalhe"></p>
             </div>
             <div class="stat-card clicavel" style="border-color: #C38D59;" title="Descarregar relatório de valores por receber" onclick="exportarRelatorio('pendente')">
               <div class="stat-title">Por Receber</div>
@@ -332,6 +339,7 @@
               <p class="stat-value" id="stat-qtd" style="color: #593122;">0</p>
             </div>
           </div>
+          <p id="stat-aviso-iva" class="stat-aviso" style="display: none;"></p>
         </div>
       </div>
 

@@ -1135,24 +1135,52 @@ function valorPorReceber(p) {
     return valor;
 }
 
+// Divide o valor de um pedido em base sem IVA e IVA.
+// Só os pedidos com produtos (campo itens) têm IVA discriminado; nos antigos o valor
+// conta todo como base sem IVA e o pedido é assinalado (semDiscriminacao)
+function decomporIva(p) {
+    if (Array.isArray(p.itens) && p.itens.length) {
+        const t = totaisItens(p.itens);
+        return { semIva: t.semIva, iva: t.iva, total: t.comIva, semDiscriminacao: false };
+    }
+    const valor = parseFloat(p.valor || 0);
+    return { semIva: valor, iva: 0, total: valor, semDiscriminacao: true };
+}
+
 function calcularEstatisticasGlobais() {
-    let totalFaturado = 0, faturadoDP = 0, totalPendente = 0;
+    const soma = () => ({ semIva: 0, iva: 0, total: 0 });
+    const geral = soma(), dp = soma();
+    let totalPendente = 0, antigos = 0, valorAntigos = 0;
     const lista = pedidosDoPeriodo();
 
     lista.forEach(p => {
-        const valorPed = parseFloat(p.valor || 0);
         if (p.status === 'Concluído') {
-            totalFaturado += valorPed;
-            if (ehPedidoDP(p)) faturadoDP += valorPed;
+            const v = decomporIva(p);
+            [geral, ...(ehPedidoDP(p) ? [dp] : [])].forEach(s => {
+                s.semIva += v.semIva; s.iva += v.iva; s.total += v.total;
+            });
+            if (v.semDiscriminacao) { antigos++; valorAntigos += v.total; }
         } else {
             totalPendente += valorPorReceber(p);
         }
     });
 
-    document.getElementById('stat-faturado').innerText = `€ ${totalFaturado.toFixed(2)}`;
-    document.getElementById('stat-faturado-dp').innerText = `€ ${faturadoDP.toFixed(2)}`;
-    document.getElementById('stat-pendente').innerText = `€ ${totalPendente.toFixed(2)}`;
+    const euro = n => `€ ${n.toFixed(2)}`;
+    const detalhe = s => s.total ? `Sem IVA: ${euro(s.semIva)}\nIVA: ${euro(s.iva)}` : '';
+    document.getElementById('stat-faturado').innerText = euro(geral.total);
+    document.getElementById('stat-faturado-detalhe').innerText = detalhe(geral);
+    document.getElementById('stat-iva').innerText = euro(geral.iva);
+    document.getElementById('stat-faturado-dp').innerText = euro(dp.total);
+    document.getElementById('stat-faturado-dp-detalhe').innerText = detalhe(dp);
+    document.getElementById('stat-pendente').innerText = euro(totalPendente);
     document.getElementById('stat-qtd').innerText = lista.length;
+
+    const aviso = document.getElementById('stat-aviso-iva');
+    aviso.style.display = antigos ? 'block' : 'none';
+    aviso.innerText = antigos
+        ? `${antigos} pedido(s) concluído(s) neste período (${euro(valorAntigos)}) foram registados antes da lista de produtos e não têm IVA discriminado. ` +
+          'O valor deles está contado como "sem IVA" e não entra no IVA a entregar.'
+        : '';
 }
 
 // ---- Relatórios em Excel (um por cartão de estatística) ----
@@ -1178,9 +1206,15 @@ function exportarRelatorio(tipo) {
     if (tipo === 'faturacao' || tipo === 'dp') {
         const concluidos = lista.filter(p => p.status === 'Concluído' && (tipo === 'faturacao' || ehPedidoDP(p)));
         titulo = tipo === 'dp' ? 'Faturação DP' : 'Faturação Geral';
-        cabecalho = ['Pedido', 'Cliente', 'Descrição', 'Data de Entrega', 'Método de Pagamento', 'Valor (€)'];
-        linhas = concluidos.map(p => [...base(p), p.metodo_pagamento || '', parseFloat(p.valor || 0)]);
-        totais = ['', '', '', '', 'TOTAL', linhas.reduce((t, l) => t + l[5], 0)];
+        cabecalho = ['Pedido', 'Cliente', 'Descrição', 'Data de Entrega', 'Método de Pagamento', 'Sem IVA (€)', 'IVA 23% (€)', 'Total (€)', 'Observação'];
+        linhas = concluidos.map(p => {
+            const v = decomporIva(p);
+            return [...base(p), p.metodo_pagamento || '', v.semIva, v.iva, v.total, v.semDiscriminacao ? 'Pedido antigo, IVA não discriminado' : ''];
+        });
+        totais = ['', '', '', '', 'TOTAL',
+            linhas.reduce((t, l) => t + l[5], 0),
+            linhas.reduce((t, l) => t + l[6], 0),
+            linhas.reduce((t, l) => t + l[7], 0), ''];
     } else if (tipo === 'pendente') {
         const abertos = lista.filter(p => p.status !== 'Concluído');
         titulo = 'Por Receber';
