@@ -433,6 +433,18 @@
         <input type="date" id="dp-data-entrega">
       </div>
 
+      <div class="caixa-ficheiros">
+        <label style="display: block; font-weight: bold; margin-bottom: 10px; color: #4A2511;">Ficheiros (opcional)</label>
+        <div style="margin-bottom: 10px;">
+          <small style="color:#666;">1. Imagens do desenho (PNG, até 6):</small><br>
+          <input type="file" id="dp-imagem" accept="image/png" multiple onchange="validarLimiteFicheiros(this)" style="font-size: 13px;">
+        </div>
+        <div>
+          <small style="color:#666;">2. Matrizes de bordado (DST, até 6):</small><br>
+          <input type="file" id="dp-dst" accept=".dst" multiple onchange="validarLimiteFicheiros(this)" style="font-size: 13px;">
+        </div>
+      </div>
+
       <button class="btn" style="margin-top: 10px;" onclick="criarPedidoDP()">Guardar Pedido DP</button>
       <div id="msg-dp-pedido" style="margin-top: 15px; font-weight: bold; font-size: 14px; text-align: center;"></div>
     </div>

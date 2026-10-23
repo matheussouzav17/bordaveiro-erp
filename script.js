@@ -699,13 +699,15 @@ async function criarPedidoDP() {
     formData.append('data_entrega', dataEntrega || '');
     formData.append('tipo_pagamento', 'Na Entrega');
     formData.append('metodo_pagamento', 'Numerário');
+    [...document.getElementById('dp-dst').files].forEach(f => formData.append('dst', f));
+    [...document.getElementById('dp-imagem').files].forEach(f => formData.append('imagem', f));
 
     try {
         msg.style.color = '#8C5E3C'; msg.innerText = 'A guardar...';
         const res = await fetch(`${URL_API}/pedidos`, { method: 'POST', body: formData });
         if (!res.ok) throw new Error('Falha ao guardar.');
 
-        ['dp-descricao', 'dp-valor', 'dp-data-entrega'].forEach(id => document.getElementById(id).value = '');
+        ['dp-descricao', 'dp-valor', 'dp-data-entrega', 'dp-imagem', 'dp-dst'].forEach(id => document.getElementById(id).value = '');
         msg.innerText = '';
         fecharModalDP();
         carregarPedidos();
