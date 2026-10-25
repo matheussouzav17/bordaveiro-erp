@@ -1,0 +1,114 @@
+[
+  {
+    "cena": "intro",
+    "titulo": "Portal do Cliente",
+    "falas": [
+      { "id": "intro-1", "texto": "Olá! Este é o guia do Portal do Cliente da Bordaveiro." },
+      { "id": "intro-2", "texto": "Neste vídeo vamos ver, passo a passo, como entrar no portal, fazer um pedido, acompanhá-lo, cancelá-lo e alterar a sua palavra-passe." },
+      { "id": "intro-3", "texto": "Para o exemplo, vamos usar a conta de teste, com o nome TESTE." }
+    ]
+  },
+  {
+    "cena": "login",
+    "titulo": "1. Entrar no portal",
+    "falas": [
+      { "id": "login-1", "texto": "Para começar, abra o link do portal que recebeu da Bordaveiro." },
+      { "id": "login-2", "texto": "Escreva o seu email no primeiro campo e a palavra-passe no segundo." },
+      { "id": "login-3", "texto": "Depois, clique em Entrar." },
+      { "id": "login-4", "texto": "No topo aparece o nome da sua conta, neste caso TESTE, e o menu com as opções Pedidos, Palavra-passe e Sair." }
+    ]
+  },
+  {
+    "cena": "senha",
+    "titulo": "2. Alterar a palavra-passe",
+    "falas": [
+      { "id": "senha-1", "texto": "Na primeira vez que entrar, recomendamos que altere a palavra-passe provisória. Clique em Palavra-passe, no menu do topo." },
+      { "id": "senha-2", "texto": "Escreva a palavra-passe atual, ou seja, a que recebeu da Bordaveiro." },
+      { "id": "senha-3", "texto": "Depois escreva a nova palavra-passe, com pelo menos oito caracteres, e repita-a no último campo." },
+      { "id": "senha-4", "texto": "Clique em Alterar Palavra-passe. Quando aparecer a mensagem a verde, a alteração está feita. Da próxima vez, entre já com a nova palavra-passe." },
+      { "id": "senha-5", "texto": "A palavra-passe fica guardada de forma encriptada: nem a Bordaveiro a consegue ver." }
+    ]
+  },
+  {
+    "cena": "pedido",
+    "titulo": "3. Fazer um pedido",
+    "falas": [
+      { "id": "pedido-1", "texto": "Agora vamos fazer um pedido. Clique em Pedidos, no menu. Do lado esquerdo está o formulário Novo Pedido." },
+      { "id": "pedido-2", "texto": "Em cada produto, escreva o nome, por exemplo, Toalha de banho, e uma descrição do que pretende, como o nome a bordar." },
+      { "id": "pedido-3", "texto": "Indique também o tipo de letra e o local do bordado. Por exemplo, letra cursiva, no canto inferior direito." },
+      { "id": "pedido-4", "texto": "No fim, indique a quantidade." },
+      { "id": "pedido-5", "texto": "Se o pedido tiver mais do que um produto, clique em Adicionar produto e preencha a nova linha da mesma forma. Para retirar um produto, use o botão vermelho com o X." },
+      { "id": "pedido-6", "texto": "Em seguida, indique a cor da linha e escolha a data pretendida para a entrega. A Bordaveiro confirma se é possível, ou indica uma nova previsão." },
+      { "id": "pedido-7", "texto": "Se tiver o desenho ou o logótipo, junte os ficheiros. Pode enviar imagens PNG ou JPEG, PDF, ou matrizes DST e EMB: até seis ficheiros, com o máximo de quinze megabytes cada." },
+      { "id": "pedido-8", "texto": "Por fim, clique em Enviar Pedido. Aparece uma mensagem a verde com o número do pedido, e o pedido surge logo na lista Os Meus Pedidos, do lado direito." }
+    ]
+  },
+  {
+    "cena": "estados",
+    "titulo": "4. Acompanhar os pedidos",
+    "falas": [
+      { "id": "estados-1", "texto": "Do lado direito, em Os Meus Pedidos, acompanha todos os seus pedidos. Cada um tem uma etiqueta colorida com o estado." },
+      { "id": "estados-2", "texto": "A aguardar confirmação, a laranja: a Bordaveiro recebeu o pedido e vai analisá-lo." },
+      { "id": "estados-3", "texto": "Confirmado, em produção: o pedido foi aceite e já tem a data de entrega confirmada." },
+      { "id": "estados-4", "texto": "Pronto, a verde: o trabalho está concluído." },
+      { "id": "estados-5", "texto": "E Cancelado, a cinzento, para os pedidos que foram cancelados." },
+      { "id": "estados-6", "texto": "A lista atualiza-se sozinha a cada minuto. Se quiser ver as alterações na hora, clique em Atualizar." }
+    ]
+  },
+  {
+    "cena": "cancelar",
+    "titulo": "5. Cancelar um pedido",
+    "falas": [
+      { "id": "cancelar-1", "texto": "Enquanto o pedido está a aguardar confirmação, pode cancelá-lo. Por baixo do pedido aparece um aviso com o botão Cancelar pedido." },
+      { "id": "cancelar-2", "texto": "Clique em Cancelar pedido e confirme na janela que aparece, clicando em OK. Atenção: esta ação não pode ser desfeita." },
+      { "id": "cancelar-3", "texto": "O pedido passa a ficar com o estado Cancelado." }
+    ]
+  },
+  {
+    "cena": "novadata",
+    "titulo": "6. Quando a data de entrega muda",
+    "falas": [
+      { "id": "novadata-1", "texto": "Por vezes, a Bordaveiro não consegue cumprir a data que pediu, e indica uma nova previsão de entrega." },
+      { "id": "novadata-2", "texto": "Nesse caso, o pedido mostra a nova data a negrito e, entre parênteses, a data que tinha pedido." },
+      { "id": "novadata-3", "texto": "Aparece também um aviso: a Bordaveiro indicou uma nova data de entrega. Se não lhe convier, pode cancelar o pedido." },
+      { "id": "novadata-4", "texto": "Se a nova data servir, não precisa de fazer nada: o pedido segue normalmente para produção." },
+      { "id": "novadata-5", "texto": "Se não servir, clique em Cancelar pedido e confirme. O pedido fica cancelado." }
+    ]
+  },
+  {
+    "cena": "alterar",
+    "titulo": "7. Alterar um pedido já enviado",
+    "falas": [
+      { "id": "alterar-1", "texto": "E se precisar de alterar um pedido já enviado? O portal não permite editar um pedido depois de enviado." },
+      { "id": "alterar-2", "texto": "Se o pedido ainda está a aguardar confirmação, cancele-o e faça um pedido novo, com as informações corretas." },
+      { "id": "alterar-3", "texto": "Se o pedido já foi confirmado, contacte diretamente a Bordaveiro, que faz a alteração por si." }
+    ]
+  },
+  {
+    "cena": "filtro",
+    "titulo": "8. Filtrar e descarregar relatório",
+    "falas": [
+      { "id": "filtro-1", "texto": "Para encontrar os pedidos de um período, use os campos De e Até, no topo da lista. O filtro usa a data de entrada do pedido." },
+      { "id": "filtro-2", "texto": "Por baixo aparece um resumo, com o número de pedidos no período e quantos foram aprovados. Para voltar a ver todos, clique em Limpar." },
+      { "id": "filtro-3", "texto": "O botão Relatório Excel descarrega uma folha com os pedidos aprovados do período, com as datas de entrada, pretendida e de entrega." }
+    ]
+  },
+  {
+    "cena": "recuperar",
+    "titulo": "9. Esqueci-me da palavra-passe",
+    "falas": [
+      { "id": "recuperar-1", "texto": "Se se esquecer da palavra-passe, no ecrã de entrada clique em Esqueci-me da palavra-passe." },
+      { "id": "recuperar-2", "texto": "Escreva o seu email e clique em Pedir nova palavra-passe. Aparece um código: guarde-o, porque vai precisar dele se continuar noutro computador." },
+      { "id": "recuperar-3", "texto": "A Bordaveiro tem de autorizar o pedido. Depois da autorização, volte a esta página e clique em Verificar autorização." },
+      { "id": "recuperar-4", "texto": "Escolha a nova palavra-passe, repita-a e clique em Guardar nova palavra-passe. Já pode entrar com ela." }
+    ]
+  },
+  {
+    "cena": "fim",
+    "titulo": "Terminar",
+    "falas": [
+      { "id": "fim-1", "texto": "Quando terminar, clique em Sair, no canto superior direito, sobretudo se estiver num computador partilhado." },
+      { "id": "fim-2", "texto": "E pronto! Se tiver alguma dúvida, contacte a Bordaveiro. Obrigado pela preferência." }
+    ]
+  }
+]
