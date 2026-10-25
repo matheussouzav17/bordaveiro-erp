@@ -539,6 +539,9 @@ function renderizarPedidos() {
                 ? `<strong>Data pretendida:</strong> ${p.data_pretendida ? formatarData(p.data_pretendida) : 'não indicada'}`
                 : `<strong>Valor:</strong> ${!(parseFloat(p.valor) > 0) && ehPedidoDP(p) ? 'acerto no fim do mês' : `€ ${escapar(p.valor)}`} | <strong>Entrega:</strong> ${dataFormatada}`}
             ${p.cor_linha ? `<br><strong>Cor da linha:</strong> ${escapar(p.cor_linha)}` : ''}
+            ${p.codigos_linhas ? `<br><strong>Linhas:</strong> ${escapar(p.codigos_linhas)}` : ''}
+            ${(Array.isArray(p.itens) ? p.itens : []).filter(letraLocal).map(i =>
+                `<br><strong>${escapar(i.nome)}:</strong> ${escapar(letraLocal(i))}`).join('')}
           </p>
         </div>
         <div style="display:flex; gap:10px; margin-top:12px; flex-wrap: wrap;">
@@ -558,6 +561,8 @@ function limparFiltroCalendarioPedidos() {
 // --- Produtos do pedido com IVA ---
 const TAXA_IVA = 0.23;
 const arred = n => Math.round(n * 100) / 100;
+// "Letra: X · Local: Y" de um produto (vazio se não tiver nenhum dos dois)
+const letraLocal = i => [i.letra && `Letra: ${i.letra}`, i.local && `Local: ${i.local}`].filter(Boolean).join(' · ');
 
 function adicionarItemPedido(item = {}) {
     const div = document.createElement('div');
@@ -808,6 +813,10 @@ function adicionarItemDP() {
       </div>
       <small>Descrição</small><input type="text" class="item-descricao" placeholder="Ex: Bordado com nome e anjo">
       <div class="item-linha">
+        <div><small>Letra</small><input type="text" class="item-letra" placeholder="Ex: Cursiva, Arial"></div>
+        <div><small>Local do bordado</small><input type="text" class="item-local" placeholder="Ex: Peito esquerdo, costas"></div>
+      </div>
+      <div class="item-linha">
         <div><small>Qtd.</small><input type="number" class="item-qtd" min="1" step="1" value="1" oninput="atualizarTotalDP()"></div>
         <div><small>Preço unit. (€)</small><input type="number" class="item-preco" min="0" step="0.01" placeholder="0.00" oninput="atualizarTotalDP()"></div>
       </div>
@@ -827,6 +836,8 @@ function lerItensDP() {
         return {
             nome: div.querySelector('.item-nome').value.trim(),
             descricao: div.querySelector('.item-descricao').value.trim(),
+            letra: div.querySelector('.item-letra').value.trim(),
+            local: div.querySelector('.item-local').value.trim(),
             quantidade, preco, sem_iva: subtotal, iva: 0, com_iva: subtotal, _div: div
         };
     });
@@ -860,6 +871,7 @@ async function criarPedidoDP() {
     formData.append('descricao', descricao);
     formData.append('itens', JSON.stringify(itens));
     formData.append('origem_artigo', 'Cliente');
+    formData.append('codigos_linhas', document.getElementById('dp-linha').value);
     formData.append('valor', valor);
     formData.append('data_entrega', dataEntrega || '');
     formData.append('tipo_pagamento', 'Na Entrega');
@@ -872,7 +884,7 @@ async function criarPedidoDP() {
         const res = await api(`${URL_API}/pedidos`, { method: 'POST', body: formData });
         if (!res.ok) throw new Error('Falha ao guardar.');
 
-        ['dp-data-entrega', 'dp-imagem', 'dp-dst'].forEach(id => document.getElementById(id).value = '');
+        ['dp-linha', 'dp-data-entrega', 'dp-imagem', 'dp-dst'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('lista-itens-dp').innerHTML = '';
         msg.innerText = '';
         fecharModalDP();
@@ -1014,6 +1026,7 @@ function abrirConfirmarPortal(id) {
             <div class="item-pedido">
               <strong>${escapar(i.quantidade)} × ${escapar(i.nome)}</strong>
               ${i.descricao ? `<br><small>${escapar(i.descricao)}</small>` : ''}
+              ${letraLocal(i) ? `<br><small>${escapar(letraLocal(i))}</small>` : ''}
             </div>`).join('') || `<p>${escapar(p.descricao)}</p>`}
         </div>
 
@@ -1628,7 +1641,7 @@ async function gerarPDF(id) {
             ...estiloTabela,
             head: [['PRODUTO / DESCRIÇÃO', 'QTD.', 'PREÇO S/ IVA', 'IVA 23%', 'TOTAL']],
             body: itens.map(i => [
-                i.descricao ? `${i.nome}\n${i.descricao}` : i.nome,
+                [i.nome, i.descricao, letraLocal(i)].filter(Boolean).join('\n'),
                 String(i.quantidade),
                 euro(i.preco),
                 euro(i.iva),

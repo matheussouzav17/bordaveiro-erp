@@ -317,6 +317,9 @@ async function alterarSenha() {
 }
 
 // --- Novo pedido ---
+// "Letra: X · Local: Y" de um produto (vazio se não tiver nenhum dos dois)
+const letraLocal = i => [i.letra && `Letra: ${i.letra}`, i.local && `Local: ${i.local}`].filter(Boolean).join(' · ');
+
 function adicionarItem() {
     const div = document.createElement('div');
     div.className = 'item-pedido';
@@ -326,6 +329,10 @@ function adicionarItem() {
         <button type="button" class="btn-small item-remover" title="Remover" onclick="this.closest('.item-pedido').remove()">✕</button>
       </div>
       <small>Descrição</small><input type="text" class="item-descricao" maxlength="500" placeholder="Ex: Tamanhos 2 M e 3 L, logótipo no peito">
+      <div class="item-linha">
+        <div><small>Letra</small><input type="text" class="item-letra" maxlength="100" placeholder="Ex: Cursiva, Arial"></div>
+        <div><small>Local do bordado</small><input type="text" class="item-local" maxlength="150" placeholder="Ex: Peito esquerdo, costas"></div>
+      </div>
       <div class="item-linha">
         <div style="max-width: 140px;"><small>Quantidade</small><input type="number" class="item-qtd" min="1" step="1" value="1"></div>
       </div>`;
@@ -337,6 +344,8 @@ function lerItens() {
         .map(div => ({
             nome: div.querySelector('.item-nome').value.trim(),
             descricao: div.querySelector('.item-descricao').value.trim(),
+            letra: div.querySelector('.item-letra').value.trim(),
+            local: div.querySelector('.item-local').value.trim(),
             quantidade: parseInt(div.querySelector('.item-qtd').value) || 1
         }))
         .filter(i => i.nome);
@@ -511,7 +520,8 @@ function renderizarPedidos() {
             const estado = estadoCliente(p);
             const itens = Array.isArray(p.itens) && p.itens.length
                 ? `<ul class="portal-itens">${p.itens.map(i =>
-                    `<li>${escapar(i.quantidade)} × <strong>${escapar(i.nome)}</strong>${i.descricao ? ` — ${escapar(i.descricao)}` : ''}</li>`).join('')}</ul>`
+                    `<li>${escapar(i.quantidade)} × <strong>${escapar(i.nome)}</strong>${i.descricao ? ` — ${escapar(i.descricao)}` : ''}` +
+                    `${letraLocal(i) ? `<br><small>${escapar(letraLocal(i))}</small>` : ''}</li>`).join('')}</ul>`
                 : `<p style="margin: 6px 0;">${escapar(p.descricao)}</p>`;
             const imagens = lerUrls(p.arquivo_imagem);
             const outros = lerUrls(p.arquivo_dst);
@@ -552,7 +562,7 @@ function exportarRelatorio() {
         ? `Período (data de entrada): ${de ? formatarData(de) : 'início'} a ${ate ? formatarData(ate) : 'hoje'}`
         : 'Período: todos os pedidos';
     const produtos = p => Array.isArray(p.itens) && p.itens.length
-        ? p.itens.map(i => `${i.quantidade} × ${i.nome}${i.descricao ? ` (${i.descricao})` : ''}`).join('; ')
+        ? p.itens.map(i => `${i.quantidade} × ${i.nome}${i.descricao ? ` (${i.descricao})` : ''}${letraLocal(i) ? ` [${letraLocal(i)}]` : ''}`).join('; ')
         : p.descricao || '';
 
     const cabecalho = ['Pedido nº', 'Produtos', 'Cor da linha', 'Data de entrada', 'Data pretendida', 'Data de entrega', 'Estado'];

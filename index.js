@@ -327,7 +327,7 @@ const ehImagem = ficheiro => /\.(png|jpe?g)$/i.test(ficheiro.originalname);
 const texto = (valor, max) => String(valor ?? '').trim().slice(0, max);
 const dataValida = valor => (/^\d{4}-\d{2}-\d{2}$/.test(valor || '') ? valor : null);
 
-// Só guarda nome, descrição e quantidade de cada produto
+// Só guarda nome, descrição, letra, local e quantidade de cada produto
 function itensDoCliente(json) {
   let itens;
   try { itens = JSON.parse(json || '[]'); } catch { return []; }
@@ -336,6 +336,8 @@ function itensDoCliente(json) {
     .map(i => ({
       nome: texto(i?.nome, 150),
       descricao: texto(i?.descricao, 500),
+      letra: texto(i?.letra, 100),
+      local: texto(i?.local, 150),
       quantidade: Math.min(Math.max(parseInt(i?.quantidade) || 1, 1), 10000)
     }))
     .filter(i => i.nome)
@@ -357,7 +359,7 @@ app.get('/portal/pedidos', apenasCliente, async (req, res) => {
 
   // Os preços que a Bordaveiro acrescentar aos produtos não são mostrados ao cliente
   (data || []).forEach(p => {
-    if (Array.isArray(p.itens)) p.itens = p.itens.map(({ nome, descricao, quantidade }) => ({ nome, descricao, quantidade }));
+    if (Array.isArray(p.itens)) p.itens = p.itens.map(({ nome, descricao, letra, local, quantidade }) => ({ nome, descricao, letra, local, quantidade }));
   });
   res.json(await assinarFicheiros(data || []));
 });
