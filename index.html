@@ -217,6 +217,7 @@
                 <button id="tab-pendentes" class="tab-btn tab-active" onclick="mudarAba('pendentes')">Pendentes</button>
                 <button id="tab-concluidos" class="tab-btn tab-inactive" onclick="mudarAba('concluidos')">Concluídos</button>
                 <button id="tab-orcamentos" class="tab-btn tab-inactive" onclick="mudarAba('orcamentos')">Orçamentos</button>
+                <button id="tab-portal" class="tab-btn tab-inactive" onclick="mudarAba('portal')">Portal</button>
               </div>
             </div>
 
@@ -363,10 +364,16 @@
             </div>
             <div class="input-group">
               <label>Nível de Acesso</label>
-              <select id="novo-user-perfil">
+              <select id="novo-user-perfil" onchange="document.getElementById('grupo-user-cliente').style.display = this.value === 'cliente' ? 'block' : 'none'">
                 <option value="funcionario">Funcionário (Pedidos e Estoque)</option>
                 <option value="admin">Administrador (Acesso total)</option>
+                <option value="cliente">Cliente (Portal do Cliente)</option>
               </select>
+            </div>
+            <div class="input-group" id="grupo-user-cliente" style="display: none; border-left: 4px solid #2980b9; padding-left: 10px;">
+              <label>Cliente desta conta</label>
+              <select id="novo-user-cliente"></select>
+              <small style="color: #666;">Esta conta só vê e cria pedidos deste cliente, em <strong>/portal</strong>.</small>
             </div>
 
             <button class="btn" style="background-color: #3e1f16;" onclick="criarUtilizador()">Criar Conta</button>
@@ -375,6 +382,12 @@
         </div>
 
         <div>
+          <div class="card" id="card-recuperacoes" style="display: none; border-left: 5px solid #E5A83B; margin-bottom: 20px;">
+            <h3 style="color: #3e1f16;">Pedidos de Nova Palavra-passe</h3>
+            <p style="font-size: 12px; color: #666; margin-top: -10px;">Confirme com o cliente (por telefone, por exemplo) que foi ele que fez o pedido antes de autorizar. Depois de autorizado, o cliente escolhe a nova palavra-passe no portal; a Bordaveiro nunca a vê.</p>
+            <div id="lista-recuperacoes"></div>
+          </div>
+
           <div class="card">
             <h3 style="color: #3e1f16;">Contas Ativas</h3>
             <p style="font-size: 12px; color: #666; margin-top: -10px;">Gestão dos utilizadores com acesso ao sistema.</p>
@@ -496,6 +509,7 @@
     </div>
   </div>
 
+  <script src="chat.js"></script>
   <script src="script.js"></script>
 
 </body>

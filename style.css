@@ -125,6 +125,27 @@ h1, h2, h3 { color: #4A2511; margin-top: 0; }
 .ficheiro-atual img { width: 32px; height: 32px; object-fit: contain; }
 .ficheiro-atual button { background: #c0392b; padding: 2px 8px; }
 
+/* Portal do cliente */
+.portal-pedido { background: white; border-left: 5px solid #8C5E3C; padding: 12px 15px; margin-bottom: 12px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); font-size: 13px; color: #555; }
+.portal-estado { color: white; font-size: 11px; font-weight: bold; padding: 3px 8px; border-radius: 4px; }
+.portal-itens { margin: 8px 0; padding-left: 18px; }
+.portal-itens li { margin-bottom: 3px; }
+.link-portal { color: #8C5E3C; text-decoration: none; font-weight: bold; }
+.rec-texto { font-size: 13px; color: #555; line-height: 1.5; margin-top: 0; }
+.rec-codigo { font-family: Consolas, 'Courier New', monospace; font-size: 26px; font-weight: bold; letter-spacing: 3px; text-align: center; color: #4A2511; background: #FAF6F2; border: 2px dashed #C38D59; border-radius: 8px; padding: 12px; margin-bottom: 15px; }
+.rec-codigo:empty { display: none; }
+.rec-estado { font-size: 13px; font-weight: bold; text-align: center; }
+.portal-filtro { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; background: #FAF6F2; border: 1px solid #EADDCE; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+.portal-filtro > div { flex: 1; min-width: 130px; }
+.portal-filtro small { display: block; font-weight: bold; color: #4A2511; margin-bottom: 3px; }
+.portal-filtro input { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-family: inherit; }
+.portal-filtro button { padding: 8px 12px; }
+.portal-ficheiros { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.portal-ficheiros a { font-size: 12px; color: #593122; background: #FAF6F2; border: 1px solid #EADDCE; border-radius: 4px; padding: 4px 8px; text-decoration: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.portal-aviso { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; background: #FDF3E7; border: 1px solid #F0D2A8; border-radius: 6px; padding: 8px 10px; margin: 8px 0; color: #8C5E3C; }
+.badge-cancelado { font-size: 11px; background: #c0392b; color: white; padding: 2px 6px; border-radius: 4px; margin-left: 4px; }
+.badge-portal { font-size: 11px; background: #2980b9; color: white; padding: 2px 6px; border-radius: 4px; margin-left: 4px; }
+
 /* Chat de reclamações e sugestões */
 .chat-card { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 .chat-cabecalho { display: flex; align-items: center; gap: 12px; background: #8C5E3C; color: white; padding: 15px 20px; }

@@ -7,7 +7,7 @@ const DURACAO_SESSAO = '12h';
 
 function criarToken(utilizador) {
   return jwt.sign(
-    { id: utilizador.id, perfil: utilizador.perfil, nome: utilizador.nome },
+    { id: utilizador.id, perfil: utilizador.perfil, nome: utilizador.nome, cliente_id: utilizador.cliente_id || null },
     SEGREDO,
     { expiresIn: DURACAO_SESSAO }
   );
@@ -34,4 +34,19 @@ function apenasAdmin(req, res, next) {
   next();
 }
 
-module.exports = { criarToken, autenticar, apenasAdmin };
+// Contas de cliente (portal) só podem usar as rotas /portal
+function apenasEquipa(req, res, next) {
+  if (req.utilizador?.perfil === 'cliente') {
+    return res.status(403).json({ erro: 'Acesso reservado à equipa Bordaveiro.' });
+  }
+  next();
+}
+
+function apenasCliente(req, res, next) {
+  if (req.utilizador?.perfil !== 'cliente' || !req.utilizador.cliente_id) {
+    return res.status(403).json({ erro: 'Esta área é reservada a clientes.' });
+  }
+  next();
+}
+
+module.exports = { criarToken, autenticar, apenasAdmin, apenasEquipa, apenasCliente };

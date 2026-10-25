@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bordaveiro - Portal do Cliente</title>
+  <meta name="theme-color" content="#8C5E3C">
+  <link rel="icon" href="logo-192.png">
+  <link rel="stylesheet" href="style.css">
+  <!-- Relatório em Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+
+  <div class="container">
+
+    <!-- ECRÃ DE LOGIN -->
+    <div id="login-screen">
+      <div class="login-card">
+        <h2 style="color: #4a2511; margin-top: 0; margin-bottom: 5px; font-size: 32px; font-family: 'Times New Roman', serif; font-style: italic;">Bordaveiro</h2>
+        <p class="login-subtitle">Portal do Cliente</p>
+
+        <div id="caixa-login">
+          <div class="input-wrapper">
+            <input type="email" id="email" class="login-input" placeholder="Email" onkeydown="if(event.key === 'Enter') entrarPortal()">
+          </div>
+          <div class="input-wrapper">
+            <input type="password" id="password" class="login-input" placeholder="Palavra-passe" onkeydown="if(event.key === 'Enter') entrarPortal()">
+          </div>
+
+          <button class="btn-login" onclick="entrarPortal()">Entrar</button>
+          <p style="margin-top: 20px; font-size: 13px;">
+            <a href="#" class="link-portal" onclick="abrirRecuperacao(); return false;">Esqueci-me da palavra-passe</a>
+          </p>
+          <p id="msg-erro" style="color: red; display: none; margin-top: 15px; font-size: 12px; font-weight: bold;"></p>
+        </div>
+
+        <!-- RECUPERAÇÃO DA PALAVRA-PASSE -->
+        <div id="caixa-recuperar" style="display: none; text-align: left;">
+          <!-- Passo 1: pedir -->
+          <div id="rec-pedir">
+            <p class="rec-texto">Indique o email da sua conta. A Bordaveiro tem de autorizar o pedido antes de poder escolher uma nova palavra-passe.</p>
+            <div class="input-wrapper">
+              <input type="email" id="rec-email" class="login-input" placeholder="Email">
+            </div>
+            <button class="btn-login" onclick="pedirRecuperacao()">Pedir nova palavra-passe</button>
+            <p style="font-size: 12px; margin-top: 12px;"><a href="#" class="link-portal" onclick="mostrarPassoRecuperacao('codigo'); return false;">Já tenho um código</a></p>
+          </div>
+
+          <!-- Passo 2: código (pedido feito noutro aparelho, ou para verificar a autorização) -->
+          <div id="rec-codigo" style="display: none;">
+            <p class="rec-texto" id="rec-codigo-texto"></p>
+            <div id="rec-codigo-mostrar" class="rec-codigo"></div>
+            <div id="rec-codigo-campos">
+              <div class="input-wrapper"><input type="email" id="rec-email-2" class="login-input" placeholder="Email"></div>
+              <div class="input-wrapper"><input type="text" id="rec-codigo-input" class="login-input" placeholder="Código (ex: ABCD-2345)" style="text-transform: uppercase;"></div>
+            </div>
+            <p id="rec-estado" class="rec-estado"></p>
+            <button class="btn-login" onclick="verificarRecuperacao()">Verificar autorização</button>
+          </div>
+
+          <!-- Passo 3: nova palavra-passe (depois de autorizado) -->
+          <div id="rec-nova" style="display: none;">
+            <p class="rec-texto">Pedido autorizado. Escolha a sua nova palavra-passe (só você a vai saber).</p>
+            <div class="input-wrapper"><input type="password" id="rec-senha" class="login-input" placeholder="Nova palavra-passe (mín. 8 caracteres)" autocomplete="new-password"></div>
+            <div class="input-wrapper"><input type="password" id="rec-senha-2" class="login-input" placeholder="Repetir a nova palavra-passe" autocomplete="new-password"></div>
+            <button class="btn-login" onclick="concluirRecuperacao()">Guardar nova palavra-passe</button>
+          </div>
+
+          <p id="rec-msg" style="font-size: 12px; font-weight: bold; margin-top: 12px;"></p>
+          <p style="font-size: 13px; text-align: center; margin-top: 15px;"><a href="#" class="link-portal" onclick="fecharRecuperacao(); return false;">← Voltar ao início de sessão</a></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ÁREA DO CLIENTE -->
+    <div id="dashboard-screen">
+
+      <div class="header-dash">
+        <div>
+          <h2 style="margin: 0; color: #4A2511;">BORDAVEIRO</h2>
+          <small style="color: #8C5E3C;">Portal do Cliente · <span id="nome-cliente"></span></small>
+        </div>
+        <div class="menu-navegacao">
+          <button id="nav-pedidos" class="btn-nav btn-nav-active" onclick="mudarPagina('pedidos')">Pedidos</button>
+          <button id="nav-sugestoes" class="btn-nav btn-nav-inactive" style="display: none;" onclick="mudarPagina('sugestoes')">Sugestões</button>
+          <button id="nav-senha" class="btn-nav btn-nav-inactive" onclick="mudarPagina('senha')">Palavra-passe</button>
+          <button class="btn-nav" style="background-color: #593122; color: white;" onclick="sairPortal()">Sair</button>
+        </div>
+      </div>
+
+      <!-- RECLAMAÇÕES E SUGESTÕES SOBRE O PORTAL -->
+      <div id="pagina-sugestoes" style="display: none; max-width: 650px; margin: 20px auto 0;">
+        <div class="card chat-card">
+          <div class="chat-cabecalho">
+            <div class="chat-avatar">B</div>
+            <div>
+              <strong>Assistente Bordaveiro</strong><br>
+              <small>Erros e sugestões sobre o portal</small>
+            </div>
+          </div>
+          <div id="chat-mensagens" class="chat-mensagens"></div>
+          <div id="chat-opcoes" class="chat-opcoes"></div>
+          <div class="chat-entrada">
+            <textarea id="chat-texto" rows="2" placeholder="Escreva aqui..." disabled
+              onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); enviarTextoChat(); }"></textarea>
+            <button id="chat-enviar" class="btn-small" onclick="enviarTextoChat()" disabled>Enviar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ALTERAR PALAVRA-PASSE -->
+      <div id="pagina-senha" style="display: none; max-width: 480px; margin: 20px auto 0;">
+        <div class="card">
+          <h3 style="border-bottom: 2px solid #EADDCE; padding-bottom: 12px; margin-bottom: 15px;">Alterar Palavra-passe</h3>
+          <p style="font-size: 13px; color: #666; margin-top: 0;">A palavra-passe fica guardada de forma encriptada: nem a Bordaveiro a consegue ver.</p>
+          <div class="input-group">
+            <label>Palavra-passe atual</label>
+            <input type="password" id="senha-atual" autocomplete="current-password">
+          </div>
+          <div class="input-group">
+            <label>Nova palavra-passe</label>
+            <input type="password" id="senha-nova" autocomplete="new-password" placeholder="Pelo menos 8 caracteres">
+          </div>
+          <div class="input-group">
+            <label>Repetir a nova palavra-passe</label>
+            <input type="password" id="senha-repetir" autocomplete="new-password" onkeydown="if(event.key === 'Enter') alterarSenha()">
+          </div>
+          <button id="btn-alterar-senha" class="btn" onclick="alterarSenha()">Alterar Palavra-passe</button>
+          <div id="msg-senha" style="margin-top: 15px; font-weight: bold; font-size: 14px; text-align: center;"></div>
+        </div>
+      </div>
+
+      <div class="grid" id="pagina-pedidos">
+        <div>
+          <div class="card">
+            <h3 style="border-bottom: 2px solid #EADDCE; padding-bottom: 12px; margin-bottom: 20px;">Novo Pedido</h3>
+
+            <div class="caixa-produtos">
+              <label style="display: block; font-weight: bold; margin-bottom: 10px; color: #4A2511;">Produtos</label>
+              <div id="lista-itens-pedido"></div>
+              <button type="button" class="btn-small" style="background: #A67B5B;" onclick="adicionarItem()">+ Adicionar produto</button>
+            </div>
+
+            <div class="input-group">
+              <label>Cor da linha</label>
+              <input type="text" id="cor-linha" maxlength="300" placeholder="Ex: Dourado, azul-marinho">
+            </div>
+
+            <div class="input-group">
+              <label>Data pretendida</label>
+              <input type="date" id="data-pretendida">
+              <small style="color: #666;">A Bordaveiro confirma se é possível ou indica uma previsão.</small>
+            </div>
+
+            <div class="caixa-ficheiros">
+              <label style="display: block; font-weight: bold; margin-bottom: 10px; color: #4A2511;">Ficheiros (opcional)</label>
+              <small style="color:#666;">PNG, JPEG, PDF, DST ou EMB — até 6 ficheiros, 15 MB cada:</small><br>
+              <input type="file" id="ficheiros" accept=".png,.jpg,.jpeg,.pdf,.dst,.emb" multiple onchange="validarFicheiros(this)" style="font-size: 13px;">
+            </div>
+
+            <button id="btn-enviar" class="btn" onclick="enviarPedido()">Enviar Pedido</button>
+            <div id="msg-pedido" style="margin-top: 15px; font-weight: bold; font-size: 14px; text-align: center;"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid #EADDCE; padding-bottom: 15px; margin-bottom: 15px;">
+              <h3 style="margin: 0;">Os Meus Pedidos</h3>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <small id="ultima-atualizacao" style="color: #999;"></small>
+                <button class="btn-small" style="background: #A67B5B;" onclick="carregarPedidos()">Atualizar</button>
+              </div>
+            </div>
+            <div class="portal-filtro">
+              <div>
+                <small>De</small>
+                <input type="date" id="filtro-de" onchange="renderizarPedidos()">
+              </div>
+              <div>
+                <small>Até</small>
+                <input type="date" id="filtro-ate" onchange="renderizarPedidos()">
+              </div>
+              <button class="btn-small" style="background: #B08D6A;" onclick="limparFiltroDatas()">Limpar</button>
+              <button class="btn-small" style="background: #27ae60;" onclick="exportarRelatorio()" title="Pedidos aprovados do período, com data de entrada e de entrega">Relatório (Excel)</button>
+            </div>
+            <small id="resumo-filtro" style="display: block; color: #888; margin-bottom: 10px;"></small>
+            <div id="lista-pedidos" style="max-height: 700px; overflow-y: auto; padding-right: 10px;">
+              <p style="text-align: center; color: #888; margin-top: 20px;">A carregar pedidos...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="chat.js"></script>
+  <script src="portal.js"></script>
+</body>
+</html>

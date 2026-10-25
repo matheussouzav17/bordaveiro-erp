@@ -26,6 +26,11 @@ async function api(url, opcoes = {}) {
     return resposta;
 }
 
+// Estado dos pedidos enviados pelos clientes no portal, antes de a equipa os confirmar
+const ESTADO_PORTAL = 'Pedido Cliente';
+// Pedidos do portal cancelados pelo cliente (aparecem na aba Portal e não contam nas estatísticas)
+const ESTADO_CANCELADO = 'Cancelado';
+
 let abaAtual = 'pendentes';
 let pedidosGlobais = [];
 let estoqueGlobais = [];
@@ -82,7 +87,10 @@ async function fazerLogin() {
 
         const dados = await resposta.json();
 
-        if (resposta.ok) {
+        if (resposta.ok && dados.perfil === 'cliente') {
+            msgErro.innerHTML = 'Esta conta é de cliente. Entre pelo <a href="portal.html">Portal do Cliente</a>.';
+            msgErro.style.display = 'block';
+        } else if (resposta.ok) {
             localStorage.setItem('token_bordaveiro', dados.token);
             localStorage.setItem('perfil_bordaveiro', dados.perfil);
             localStorage.setItem('nome_bordaveiro', dados.nome || '');
@@ -106,6 +114,8 @@ function mostrarDashboard() {
     const ehAdmin = perfil === 'admin';
     document.getElementById('nav-admin').style.display = ehAdmin ? 'inline-block' : 'none';
     document.getElementById('nav-estatisticas').style.display = ehAdmin ? 'inline-block' : 'none';
+    // Mostra no menu se há clientes à espera de autorização para nova palavra-passe
+    if (ehAdmin) carregarRecuperacoes();
 
     mudarPagina('pedidos');
     carregarClientes();
@@ -141,7 +151,7 @@ function mudarPagina(pagina) {
     if (pagina === 'pedidos') carregarPedidos();
     if (pagina === 'estoque') carregarEstoque();
     if (pagina === 'estatisticas') carregarPedidos().then(calcularEstatisticasGlobais);
-    if (pagina === 'admin') carregarUtilizadores();
+    if (pagina === 'admin') { carregarUtilizadores(); carregarRecuperacoes(); }
     if (pagina === 'feedback') {
         document.getElementById('coluna-feedback-admin').style.display = ehAdmin ? 'block' : 'none';
         if (!document.getElementById('chat-mensagens').children.length) iniciarChat();
@@ -154,6 +164,10 @@ function mudarPagina(pagina) {
 // ============================================================================
 
 async function carregarUtilizadores() {
+    // Lista de clientes para as contas do portal
+    document.getElementById('novo-user-cliente').innerHTML = '<option value="">Escolha o cliente...</option>' +
+        [...clientesGlobais].sort((a, b) => a.nome.localeCompare(b.nome))
+            .map(c => `<option value="${c.id}">${escapar(c.nome)}</option>`).join('');
     try {
         const resposta = await api(`${URL_API}/utilizadores`);
         const users = await resposta.json();
@@ -166,15 +180,18 @@ async function carregarUtilizadores() {
         }
 
         users.forEach(u => {
-            const cor = u.perfil === 'admin' ? '#3e1f16' : '#8C5E3C';
+            const cor = u.perfil === 'admin' ? '#3e1f16' : u.perfil === 'cliente' ? '#2980b9' : '#8C5E3C';
             div.innerHTML += `
         <div style="background: white; padding: 12px; border-left: 4px solid ${cor}; margin-bottom: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
           <div>
             <strong style="color: #4A2511;">${escapar(u.nome)}</strong>
             <span style="font-size: 11px; background: #eee; padding: 2px 6px; border-radius: 4px; margin-left: 5px;">${escapar(u.perfil).toUpperCase()}</span>
-            <br><small style="color: #666;">${escapar(u.email)}</small>
+            <br><small style="color: #666;">${escapar(u.email)}${u.perfil === 'cliente' && u.clientes ? ` · cliente: ${escapar(u.clientes.nome)}` : ''}</small>
           </div>
-          ${u.email !== 'admin@bordaveiro.pt' ? `<button onclick="apagarUtilizador(${u.id})" class="btn-small" style="background: #e74c3c;">Eliminar</button>` : ''}
+          <div style="display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end;">
+            ${u.perfil === 'cliente' ? `<button onclick="alterarFeedbackCliente(${u.id}, ${u.feedback_ativo === false})" class="btn-small" style="background: ${u.feedback_ativo === false ? '#2980b9' : '#7f8c8d'};" title="Aba Sugestões no portal">${u.feedback_ativo === false ? 'Ativar sugestões' : 'Desativar sugestões'}</button>` : ''}
+            ${u.email !== 'admin@bordaveiro.pt' ? `<button onclick="apagarUtilizador(${u.id})" class="btn-small" style="background: #e74c3c;">Eliminar</button>` : ''}
+          </div>
         </div>`;
         });
     } catch (e) {
@@ -187,10 +204,14 @@ async function criarUtilizador() {
     const email = document.getElementById('novo-user-email').value;
     const senha = document.getElementById('novo-user-senha').value;
     const perfil = document.getElementById('novo-user-perfil').value;
+    const cliente_id = perfil === 'cliente' ? document.getElementById('novo-user-cliente').value : null;
     const msg = document.getElementById('msg-novo-user');
 
     if (!nome || !email || !senha) {
         msg.style.color = 'red'; msg.innerText = 'Preencha todos os campos.'; return;
+    }
+    if (perfil === 'cliente' && !cliente_id) {
+        msg.style.color = 'red'; msg.innerText = 'Escolha o cliente desta conta.'; return;
     }
 
     try {
@@ -198,7 +219,7 @@ async function criarUtilizador() {
         const resposta = await api(`${URL_API}/utilizadores`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ nome, email, senha, perfil })
+            body: JSON.stringify({ nome, email, senha, perfil, cliente_id })
         });
 
         if (!resposta.ok) {
@@ -215,6 +236,46 @@ async function criarUtilizador() {
     } catch (e) {
         msg.style.color = 'red'; msg.innerText = `Erro: ${e.message}`;
     }
+}
+
+// --- Pedidos de nova palavra-passe do portal (o admin autoriza ou recusa) ---
+async function carregarRecuperacoes() {
+    let pedidos = [];
+    try {
+        const res = await api(`${URL_API}/recuperacoes`);
+        if (res.ok) pedidos = await res.json();
+    } catch (e) {
+        return;
+    }
+
+    const nav = document.getElementById('nav-admin');
+    nav.innerText = pedidos.length ? `Administração (${pedidos.length})` : 'Administração';
+    document.getElementById('card-recuperacoes').style.display = pedidos.length ? 'block' : 'none';
+    document.getElementById('lista-recuperacoes').innerHTML = pedidos.map(r => {
+        const u = r.utilizadores || {};
+        const data = new Date(r.criado_em).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' });
+        return `
+      <div style="background: white; padding: 12px; border-left: 4px solid #E5A83B; margin-bottom: 10px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div>
+          <strong style="color: #4A2511;">${escapar(u.nome)}</strong>${u.clientes ? ` <small>(${escapar(u.clientes.nome)})</small>` : ''}
+          <br><small style="color: #666;">${escapar(u.email)} · pedido a ${data}</small>
+        </div>
+        <div style="display: flex; gap: 6px;">
+          <button class="btn-small" style="background: #27ae60;" onclick="decidirRecuperacao(${r.id}, 'autorizar')">Autorizar</button>
+          <button class="btn-small" style="background: #e74c3c;" onclick="decidirRecuperacao(${r.id}, 'recusar')">Recusar</button>
+        </div>
+      </div>`;
+    }).join('');
+}
+
+async function decidirRecuperacao(id, decisao) {
+    const pergunta = decisao === 'autorizar'
+        ? 'Autorizar este cliente a escolher uma nova palavra-passe? Confirme antes que foi ele que fez o pedido.'
+        : 'Recusar este pedido de nova palavra-passe?';
+    if (!confirm(pergunta)) return;
+    const res = await api(`${URL_API}/recuperacoes/${id}/${decisao}`, { method: 'POST' });
+    if (!res.ok) alert((await res.json()).erro || 'Não foi possível atualizar o pedido.');
+    carregarRecuperacoes();
 }
 
 async function apagarUtilizador(id) {
@@ -369,7 +430,7 @@ function verificarPagamento() {
 
 function mudarAba(aba) {
     abaAtual = aba;
-    ['pendentes', 'concluidos', 'orcamentos'].forEach(a => {
+    ['pendentes', 'concluidos', 'orcamentos', 'portal'].forEach(a => {
         document.getElementById(`tab-${a}`).className = a === aba ? 'tab-btn tab-active' : 'tab-btn tab-inactive';
     });
     renderizarPedidos();
@@ -387,6 +448,8 @@ function renderizarPedidos() {
 
     const totalOrcamentos = pedidosGlobais.filter(p => p.status === 'Orçamento').length;
     document.getElementById('tab-orcamentos').innerText = totalOrcamentos > 0 ? `Orçamentos (${totalOrcamentos})` : 'Orçamentos';
+    const totalPortal = pedidosGlobais.filter(p => [ESTADO_PORTAL, ESTADO_CANCELADO].includes(p.status)).length;
+    document.getElementById('tab-portal').innerText = totalPortal > 0 ? `Portal (${totalPortal})` : 'Portal';
 
     const textoPesquisa = document.getElementById('pesquisa-pedidos').value.toLowerCase();
     const dataDe = document.getElementById('filtro-data-de').value;
@@ -395,8 +458,9 @@ function renderizarPedidos() {
     const filtrados = pedidosGlobais.filter(p => {
         let naAba;
         if (abaAtual === 'orcamentos') naAba = p.status === 'Orçamento';
+        else if (abaAtual === 'portal') naAba = [ESTADO_PORTAL, ESTADO_CANCELADO].includes(p.status);
         else if (abaAtual === 'concluidos') naAba = p.status === 'Concluído';
-        else naAba = p.status !== 'Concluído' && p.status !== 'Orçamento';
+        else naAba = !['Concluído', 'Orçamento', ESTADO_PORTAL, ESTADO_CANCELADO].includes(p.status);
         const desc = p.descricao ? p.descricao.toLowerCase() : '';
         const nomeCli = p.clientes && p.clientes.nome ? p.clientes.nome.toLowerCase() : '';
         const bateTexto = desc.includes(textoPesquisa) || nomeCli.includes(textoPesquisa);
@@ -420,9 +484,15 @@ function renderizarPedidos() {
 
     filtrados.forEach(p => {
         const ehOrcamento = p.status === 'Orçamento';
-        const corBorda = p.status === 'Concluído' ? '#27ae60' : ehOrcamento ? '#E5A83B' : '#8C5E3C';
+        const doPortal = p.status === ESTADO_PORTAL;
+        const cancelado = p.status === ESTADO_CANCELADO;
+        const corBorda = p.status === 'Concluído' ? '#27ae60' : ehOrcamento ? '#E5A83B' : doPortal ? '#2980b9' : cancelado ? '#c0392b' : '#8C5E3C';
 
-        const btnConcluir = ehOrcamento
+        const btnConcluir = cancelado
+            ? ''
+            : doPortal
+            ? `<button class="btn-small" style="background:#2980b9;" onclick="abrirConfirmarPortal(${p.id})">Confirmar pedido</button>`
+            : ehOrcamento
             ? `<button class="btn-small" style="background:#27ae60;" onclick="aprovarOrcamento(${p.id})">Aprovar e criar pedido</button>`
             : p.status !== 'Concluído'
             ? `<button class="btn-small" style="background:#27ae60;" onclick="mudarStatus(${p.id}, 'Concluído')">Concluir</button>`
@@ -439,9 +509,7 @@ function renderizarPedidos() {
         const btnEditar = `<button class="btn-small" style="background:#f39c12;" onclick="abrirEditarPedido(${p.id})">Editar</button>`;
 
         const urlsDst = lerUrls(p.arquivo_dst);
-        const botaoDst = urlsDst.map((url, i) =>
-            `<a href="${escapar(url)}" target="_blank" class="btn-small" style="background:#3498db;">${urlsDst.length > 1 ? `DST ${i + 1}` : 'Descarregar DST'}</a>`
-        ).join('');
+        const botaoDst = botoesFicheiros(urlsDst);
 
         const urlsImagem = lerUrls(p.arquivo_imagem);
         const miniatura = urlsImagem.length
@@ -460,14 +528,17 @@ function renderizarPedidos() {
         painel.innerHTML += `
       <div style="border-left: 5px solid ${corBorda}; background: white; padding: 15px; margin-bottom: 12px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
         <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom: 8px; gap: 10px; flex-wrap: wrap;">
-          <strong style="font-size: 15px; color: #4A2511;">#${p.id} - ${escapar(p.descricao)}${ehOrcamento ? ' <span style="font-size:11px; background:#E5A83B; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ORÇAMENTO</span>' : ''}</strong>
+          <strong style="font-size: 15px; color: #4A2511;">#${p.id} - ${escapar(p.descricao)}${ehOrcamento ? ' <span style="font-size:11px; background:#E5A83B; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ORÇAMENTO</span>' : ''}${doPortal ? ' <span class="badge-portal">PORTAL</span>' : ''}${cancelado ? ' <span class="badge-cancelado">CANCELADO PELO CLIENTE</span>' : ''}</strong>
           <div style="display:flex; gap:6px; flex-wrap: wrap;">${botaoDst}<button class="btn-small" style="background:#A67B5B;" onclick="gerarPDF(${p.id})">Gerar PDF</button></div>
         </div>
         <div class="pedido-corpo${urlsImagem.length > 1 ? ' varias-imagens' : ''}">
           ${miniatura}
           <p style="margin:2px 0; font-size:13px; color:#555;">
             <strong>Cliente:</strong> ${p.clientes ? escapar(p.clientes.nome) : 'Desconhecido'}<br>
-            <strong>Valor:</strong> € ${escapar(p.valor)} | <strong>Entrega:</strong> ${dataFormatada}
+            ${doPortal
+                ? `<strong>Data pretendida:</strong> ${p.data_pretendida ? formatarData(p.data_pretendida) : 'não indicada'}`
+                : `<strong>Valor:</strong> ${!(parseFloat(p.valor) > 0) && ehPedidoDP(p) ? 'acerto no fim do mês' : `€ ${escapar(p.valor)}`} | <strong>Entrega:</strong> ${dataFormatada}`}
+            ${p.cor_linha ? `<br><strong>Cor da linha:</strong> ${escapar(p.cor_linha)}` : ''}
           </p>
         </div>
         <div style="display:flex; gap:10px; margin-top:12px; flex-wrap: wrap;">
@@ -620,6 +691,22 @@ function lerUrls(valor) {
     return [valor];
 }
 
+// Tipo do ficheiro pela extensão (DST, EMB, PDF...); os pedidos do portal podem trazer vários tipos
+const tipoFicheiro = url => (decodeURIComponent(url.split('?')[0]).split('.').pop() || '').toUpperCase();
+
+// Botões de download: "Descarregar DST" se houver um só ficheiro; senão "DST 1", "DST 2", "PDF"...
+function botoesFicheiros(urls) {
+    const porTipo = {};
+    urls.forEach(url => { const t = tipoFicheiro(url); porTipo[t] = (porTipo[t] || 0) + 1; });
+    const vistos = {};
+    return urls.map(url => {
+        const tipo = tipoFicheiro(url);
+        vistos[tipo] = (vistos[tipo] || 0) + 1;
+        const texto = urls.length === 1 ? `Descarregar ${tipo}` : porTipo[tipo] > 1 ? `${tipo} ${vistos[tipo]}` : tipo;
+        return `<a href="${escapar(url)}" target="_blank" class="btn-small" style="background:${tipo === 'PDF' ? '#c0392b' : '#3498db'};">${escapar(texto)}</a>`;
+    }).join('');
+}
+
 // jaExistentes: ficheiros que o pedido já tem (na edição)
 function validarLimiteFicheiros(input, jaExistentes = 0) {
     if (input.files.length + jaExistentes <= MAX_FICHEIROS) return true;
@@ -752,118 +839,24 @@ async function criarPedidoDP() {
 // RECLAMAÇÕES E SUGESTÕES (chat guiado)
 // ============================================================================
 
-const ASSUNTOS_FEEDBACK = ['Pedidos', 'Estoque', 'Sistema / App', 'Atendimento', 'Outro'];
-let conversa = {};          // { tipo, assunto, mensagem } da mensagem em curso
-let aguardaTexto = false;   // true quando o chat espera a descrição escrita
-
-function bolhaChat(texto, autor = 'bot') {
-    const caixa = document.getElementById('chat-mensagens');
-    const div = document.createElement('div');
-    div.className = `chat-bolha ${autor}`;
-    div.textContent = texto;
-    caixa.appendChild(div);
-    caixa.scrollTop = caixa.scrollHeight;
-    return div;
-}
-
-// Mostra "a escrever..." por instantes antes da resposta do assistente
-function respostaBot(texto, opcoes = []) {
-    definirOpcoesChat([]);
-    const aEscrever = bolhaChat('a escrever...', 'bot escrever');
-    return new Promise(resolve => setTimeout(() => {
-        aEscrever.remove();
-        bolhaChat(texto);
-        definirOpcoesChat(opcoes);
-        resolve();
-    }, 500));
-}
-
-// opcoes: [{ texto, acao }]
-function definirOpcoesChat(opcoes) {
-    const div = document.getElementById('chat-opcoes');
-    div.innerHTML = '';
-    opcoes.forEach(({ texto, acao }) => {
-        const btn = document.createElement('button');
-        btn.textContent = texto;
-        btn.onclick = () => { bolhaChat(texto, 'utilizador'); acao(); };
-        div.appendChild(btn);
-    });
-}
-
-function ativarTextoChat(ativo) {
-    aguardaTexto = ativo;
-    const texto = document.getElementById('chat-texto');
-    texto.disabled = !ativo;
-    document.getElementById('chat-enviar').disabled = !ativo;
-    if (ativo) texto.focus();
-}
-
-function iniciarChat() {
-    document.getElementById('chat-mensagens').innerHTML = '';
-    const nome = (localStorage.getItem('nome_bordaveiro') || '').split(' ')[0];
-    perguntarTipo(`Olá${nome ? ', ' + nome : ''}! Sou o assistente da Bordaveiro.\nO que gostaria de nos enviar?`);
-}
-
-function perguntarTipo(texto) {
-    conversa = {};
-    ativarTextoChat(false);
-    respostaBot(texto, ['Reclamação', 'Sugestão'].map(tipo => ({
-        texto: tipo, acao: () => { conversa.tipo = tipo; perguntarAssunto(); }
-    })));
-}
-
-function perguntarAssunto() {
-    respostaBot(`Sobre que assunto é a sua ${conversa.tipo.toLowerCase()}?`, ASSUNTOS_FEEDBACK.map(assunto => ({
-        texto: assunto, acao: () => { conversa.assunto = assunto; pedirMensagem(); }
-    })));
-}
-
-async function pedirMensagem() {
-    await respostaBot(conversa.tipo === 'Reclamação'
-        ? 'Lamentamos o incómodo. Descreva o que aconteceu, com o máximo de detalhe possível.'
-        : 'Ótimo! Conte-nos a sua ideia.');
-    ativarTextoChat(true);
-}
-
-function enviarTextoChat() {
-    const campo = document.getElementById('chat-texto');
-    const texto = campo.value.trim();
-    if (!aguardaTexto || !texto) return;
-    campo.value = '';
-    ativarTextoChat(false);
-    bolhaChat(texto, 'utilizador');
-    conversa.mensagem = texto;
-    confirmarEnvio();
-}
-
-function confirmarEnvio() {
-    respostaBot(`Resumo:\n• Tipo: ${conversa.tipo}\n• Assunto: ${conversa.assunto}\n\nPosso enviar?`, [
-        { texto: 'Enviar', acao: gravarFeedback },
-        { texto: 'Reescrever mensagem', acao: pedirMensagem },
-        { texto: 'Cancelar', acao: () => perguntarTipo('Sem problema, nada foi enviado. Quer enviar outra coisa?') }
-    ]);
-}
-
-async function gravarFeedback() {
-    definirOpcoesChat([]);
-    try {
+// O chat em si está em chat.js (partilhado com o Portal do Cliente)
+configurarChat({
+    assuntos: ['Pedidos', 'Estoque', 'Sistema / App', 'Atendimento', 'Outro'],
+    saudacao: () => {
+        const nome = (localStorage.getItem('nome_bordaveiro') || '').split(' ')[0];
+        return `Olá${nome ? ', ' + nome : ''}! Sou o assistente da Bordaveiro.\nO que gostaria de nos enviar?`;
+    },
+    enviar: async conversa => {
         const res = await api(`${URL_API}/feedback`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(conversa)
         });
         if (!res.ok) throw new Error();
-        const criado = await res.json();
-        await respostaBot(`Obrigado! A sua ${conversa.tipo.toLowerCase()} foi registada com o nº ${criado.id}. A administração vai analisá-la.`,
-            [{ texto: 'Enviar outra', acao: () => perguntarTipo('O que gostaria de enviar agora?') }]);
-        if (localStorage.getItem('perfil_bordaveiro') === 'admin') carregarFeedback();
-    } catch (e) {
-        respostaBot('Não foi possível enviar a mensagem. Verifique a ligação e tente novamente.', [
-            { texto: 'Tentar novamente', acao: gravarFeedback },
-            { texto: 'Cancelar', acao: () => perguntarTipo('Quer enviar outra coisa?') }
-        ]);
-    }
-}
+        return res.json();
+    },
+    aposEnviar: () => { if (localStorage.getItem('perfil_bordaveiro') === 'admin') carregarFeedback(); }
+});
 
 // --- Lista de mensagens recebidas (admin) ---
 let feedbackGlobais = [];
@@ -872,7 +865,8 @@ let filtroFeedback = 'Novo';
 async function carregarFeedback() {
     try {
         const res = await api(`${URL_API}/feedback`);
-        feedbackGlobais = await res.json();
+        const dados = await res.json();
+        feedbackGlobais = Array.isArray(dados) ? dados : [];
     } catch (e) {
         feedbackGlobais = [];
     }
@@ -896,16 +890,41 @@ function renderizarFeedback() {
     div.innerHTML = lista.map(f => {
         const data = f.created_at ? new Date(f.created_at).toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' }) : '';
         const novoEstado = filtroFeedback === 'Novo' ? 'Resolvido' : 'Novo';
+        // Mensagens de clientes (portal): o admin pode desligar a opção a quem a use para outros assuntos
+        const doCliente = f.origem === 'Portal' && f.utilizador_id;
+        const ativo = f.utilizadores?.feedback_ativo !== false;
+        const btnCliente = doCliente
+            ? `<button class="btn-small" style="background:${ativo ? '#7f8c8d' : '#2980b9'};" onclick="alterarFeedbackCliente(${f.utilizador_id}, ${!ativo})">${ativo ? 'Desativar sugestões deste cliente' : 'Reativar sugestões deste cliente'}</button>`
+            : '';
         return `
       <div class="feedback-item ${f.tipo === 'Reclamação' ? 'reclamacao' : ''}">
-        <span class="badge-feedback">${escapar(f.tipo)}</span><strong>#${f.id} · ${escapar(f.assunto || '')}</strong>
+        <span class="badge-feedback">${escapar(f.tipo)}</span>${f.origem === 'Portal' ? '<span class="badge-portal" style="margin: 0 6px 0 0;">CLIENTE</span>' : ''}<strong>#${f.id} · ${escapar(f.assunto || '')}</strong>
         <p>${escapar(f.mensagem)}</p>
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-          <small>${escapar(f.autor || 'Desconhecido')} · ${data}</small>
-          <button class="btn-small" style="background:${novoEstado === 'Resolvido' ? '#27ae60' : '#B08D6A'};" onclick="mudarEstadoFeedback(${f.id}, '${novoEstado}')">${novoEstado === 'Resolvido' ? 'Marcar como resolvida' : 'Reabrir'}</button>
+          <small>${escapar(f.autor || 'Desconhecido')} · ${data}${doCliente && !ativo ? ' · <strong style="color:#c0392b;">sugestões desativadas</strong>' : ''}</small>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            ${btnCliente}
+            <button class="btn-small" style="background:${novoEstado === 'Resolvido' ? '#27ae60' : '#B08D6A'};" onclick="mudarEstadoFeedback(${f.id}, '${novoEstado}')">${novoEstado === 'Resolvido' ? 'Marcar como resolvida' : 'Reabrir'}</button>
+          </div>
         </div>
       </div>`;
     }).join('');
+}
+
+// Liga/desliga a aba "Sugestões" do portal para uma conta de cliente
+async function alterarFeedbackCliente(utilizadorId, ativo) {
+    const pergunta = ativo
+        ? 'Reativar as sugestões e reclamações para este cliente?'
+        : 'Desativar as sugestões e reclamações para este cliente? A aba deixa de aparecer no portal dele.';
+    if (!confirm(pergunta)) return;
+    const res = await api(`${URL_API}/utilizadores/${utilizadorId}/feedback`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ativo })
+    });
+    if (!res.ok) alert((await res.json()).erro || 'Não foi possível alterar a conta.');
+    carregarFeedback();
+    if (document.getElementById('pagina-admin').style.display !== 'none') carregarUtilizadores();
 }
 
 async function mudarEstadoFeedback(id, estado) {
@@ -915,6 +934,115 @@ async function mudarEstadoFeedback(id, estado) {
         body: JSON.stringify({ estado })
     });
     carregarFeedback();
+}
+
+// --- Confirmação de pedidos do portal ---
+// A equipa indica o valor do pedido (obrigatório; o cliente não o vê) e confirma a data
+// pedida pelo cliente (OK) ou indica uma previsão
+function abrirConfirmarPortal(id) {
+    const p = pedidosGlobais.find(item => item.id === id);
+    if (!p) return;
+
+    let modal = document.getElementById('modal-confirmar-portal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'modal-confirmar-portal';
+        modal.className = 'modal-overlay';
+        document.body.appendChild(modal);
+    }
+
+    const itens = Array.isArray(p.itens) ? p.itens : [];
+    const imagens = lerUrls(p.arquivo_imagem);
+    const hoje = new Date().toISOString().slice(0, 10);
+
+    modal.innerHTML = `
+      <div class="modal-content">
+        <button class="btn-fechar-modal" onclick="document.getElementById('modal-confirmar-portal').style.display='none'">X</button>
+        <h3>Confirmar Pedido #${p.id}</h3>
+        <p style="margin-top: -8px; color: #666; font-size: 13px;">Cliente: <strong>${p.clientes ? escapar(p.clientes.nome) : 'Desconhecido'}</strong> · enviado pelo portal</p>
+
+        <div class="caixa-produtos">
+          <label style="display: block; font-weight: bold; margin-bottom: 10px; color: #4A2511;">Produtos pedidos</label>
+          ${itens.map(i => `
+            <div class="item-pedido">
+              <strong>${escapar(i.quantidade)} × ${escapar(i.nome)}</strong>
+              ${i.descricao ? `<br><small>${escapar(i.descricao)}</small>` : ''}
+            </div>`).join('') || `<p>${escapar(p.descricao)}</p>`}
+        </div>
+
+        ${p.cor_linha ? `<p><strong>Cor da linha:</strong> ${escapar(p.cor_linha)}</p>` : ''}
+        ${imagens.length ? `<div class="thumbs-pedido" style="margin-bottom: 15px;">${imagens.map(url =>
+            `<a href="${escapar(url)}" target="_blank"><img class="thumb-pedido" src="${escapar(url)}" alt=""></a>`).join('')}</div>` : ''}
+        ${lerUrls(p.arquivo_dst).length ? `<div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 15px;">${botoesFicheiros(lerUrls(p.arquivo_dst))}</div>` : ''}
+
+        <div class="caixa-produtos">
+          <div class="input-group" style="margin-bottom: 0;">
+            <label>Valor do pedido sem IVA (€) <span style="color: #c0392b;">*</span></label>
+            <input type="number" id="confirmar-valor" min="0" step="0.01" placeholder="0.00" oninput="atualizarIvaConfirmacao()">
+          </div>
+          <div class="totais-iva">
+            <div><span>IVA (23%)</span><strong id="confirmar-iva">€ 0.00</strong></div>
+            <div class="total-final"><span>Total com IVA</span><strong id="confirmar-total">€ 0.00</strong></div>
+          </div>
+        </div>
+
+        <div class="caixa-ficheiros" style="border-style: solid;">
+          ${p.data_pretendida ? `
+            <p style="margin-top: 0;">O cliente pretende o pedido para <strong>${formatarData(p.data_pretendida)}</strong>.</p>
+            <button class="btn" style="background: #27ae60;" onclick="confirmarPedidoPortal(${p.id}, '${p.data_pretendida}')">OK — data possível</button>
+            <p style="text-align: center; color: #888; margin: 12px 0 8px;">— ou, se não for possível —</p>`
+          : '<p style="margin-top: 0;">O cliente não indicou data pretendida.</p>'}
+          <div class="input-group" style="margin-bottom: 10px;">
+            <label>Previsão de entrega</label>
+            <input type="date" id="confirmar-previsao" min="${hoje}">
+          </div>
+          <button class="btn" style="background: #8C5E3C;" onclick="confirmarPedidoPortal(${p.id}, document.getElementById('confirmar-previsao').value)">Confirmar com esta previsão</button>
+        </div>
+        <p id="msg-confirmar-portal" style="font-size:13px; text-align:center; margin-top:10px; font-weight: bold;"></p>
+      </div>`;
+
+    modal.style.display = 'flex';
+}
+
+// O valor é obrigatório e introduzido sem IVA; o pedido guarda o total com IVA
+function valoresConfirmacao() {
+    const semIva = arred(parseFloat(document.getElementById('confirmar-valor').value) || 0);
+    const iva = arred(semIva * TAXA_IVA);
+    return { semIva, iva, comIva: arred(semIva + iva) };
+}
+
+function atualizarIvaConfirmacao() {
+    const v = valoresConfirmacao();
+    document.getElementById('confirmar-iva').innerText = `€ ${v.iva.toFixed(2)}`;
+    document.getElementById('confirmar-total').innerText = `€ ${v.comIva.toFixed(2)}`;
+}
+
+async function confirmarPedidoPortal(id, dataEntrega) {
+    const msg = document.getElementById('msg-confirmar-portal');
+    const valor = valoresConfirmacao();
+    if (!(valor.semIva > 0)) {
+        msg.style.color = 'red'; msg.innerText = 'Indique o valor do pedido.';
+        document.getElementById('confirmar-valor').focus();
+        return;
+    }
+    if (!dataEntrega) { msg.style.color = 'red'; msg.innerText = 'Indique a previsão de entrega.'; return; }
+
+    try {
+        msg.style.color = '#8C5E3C'; msg.innerText = 'A confirmar...';
+        const res = await api(`${URL_API}/pedidos/${id}/confirmar`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ data_entrega: dataEntrega, valor: valor.comIva })
+        });
+        const dados = await res.json();
+        if (!res.ok) throw new Error(dados.erro);
+
+        document.getElementById('modal-confirmar-portal').style.display = 'none';
+        await carregarPedidos();
+        mudarAba('pendentes');
+    } catch (e) {
+        msg.style.color = 'red'; msg.innerText = e.message || 'Não foi possível confirmar o pedido.';
+    }
 }
 
 // --- Edição de pedidos ---
@@ -945,12 +1073,17 @@ function abrirEditarPedido(id) {
           <input type="number" step="0.01" id="edit-valor">
         </div>
         <div class="input-group">
+          <label>Data de entrega / previsão</label>
+          <input type="date" id="edit-data-entrega">
+          <small id="edit-data-pretendida" style="color: #2980b9;"></small>
+        </div>
+        <div class="input-group">
           <label>Imagens PNG (até 6)</label>
           <div id="edit-lista-imagem" class="ficheiros-atuais"></div>
           <input type="file" id="edit-imagem" accept="image/png" multiple onchange="validarLimiteFicheiros(this, ficheirosEdicao.imagem.length)">
         </div>
         <div class="input-group">
-          <label>Ficheiros DST (até 6)</label>
+          <label>Ficheiros DST / PDF / EMB (até 6)</label>
           <div id="edit-lista-dst" class="ficheiros-atuais"></div>
           <input type="file" id="edit-dst" accept=".dst" multiple onchange="validarLimiteFicheiros(this, ficheirosEdicao.dst.length)">
         </div>
@@ -969,6 +1102,11 @@ function abrirEditarPedido(id) {
     document.getElementById('edit-descricao').value = p.descricao || '';
     document.getElementById('edit-linhas').value = p.codigos_linhas || '';
     document.getElementById('edit-valor').value = p.valor || '';
+    document.getElementById('edit-data-entrega').value = p.data_entrega || '';
+    // Pedidos do portal: o cliente vê a nova data como previsão de entrega
+    document.getElementById('edit-data-pretendida').innerText = p.data_pretendida
+        ? `Data pretendida pelo cliente: ${formatarData(p.data_pretendida)}. Se alterar, o cliente vê a nova data no portal.`
+        : '';
     ficheirosEdicao = { imagem: lerUrls(p.arquivo_imagem), dst: lerUrls(p.arquivo_dst) };
     renderizarFicheirosEdicao();
     document.getElementById('msg-editar-pedido').innerText = '';
@@ -1005,12 +1143,13 @@ async function guardarEdicaoPedido() {
     formData.append('descricao', document.getElementById('edit-descricao').value);
     formData.append('codigos_linhas', document.getElementById('edit-linhas').value);
     formData.append('valor', document.getElementById('edit-valor').value || 0);
+    formData.append('data_entrega', document.getElementById('edit-data-entrega').value || '');
     formData.append('arquivo_dst', JSON.stringify(ficheirosEdicao.dst));
     formData.append('arquivo_imagem', JSON.stringify(ficheirosEdicao.imagem));
 
     // Reenvia os restantes campos para não serem perdidos
     for (const key in pAntigo) {
-        if (!['descricao', 'codigos_linhas', 'valor', 'arquivo_dst', 'arquivo_imagem', 'clientes', 'itens'].includes(key)) {
+        if (!['descricao', 'codigos_linhas', 'valor', 'data_entrega', 'arquivo_dst', 'arquivo_imagem', 'clientes', 'itens'].includes(key)) {
             formData.append(key, pAntigo[key] !== null ? pAntigo[key] : '');
         }
     }
@@ -1114,7 +1253,7 @@ function pedidosDoPeriodo() {
     const inicio = document.getElementById('stat-data-inicio').value;
     const fim = document.getElementById('stat-data-fim').value;
     return pedidosGlobais.filter(p => {
-        if (p.status === 'Orçamento') return false;
+        if (['Orçamento', ESTADO_PORTAL, ESTADO_CANCELADO].includes(p.status)) return false;
         if (!inicio && !fim) return true;
         if (!p.data_entrega) return false;
         if (inicio && p.data_entrega < inicio) return false;
@@ -1139,11 +1278,14 @@ function valorPorReceber(p) {
 // Só os pedidos com produtos (campo itens) têm IVA discriminado; nos antigos o valor
 // conta todo como base sem IVA e o pedido é assinalado (semDiscriminacao)
 function decomporIva(p) {
-    if (Array.isArray(p.itens) && p.itens.length) {
-        const t = totaisItens(p.itens);
-        return { semIva: t.semIva, iva: t.iva, total: t.comIva, semDiscriminacao: false };
-    }
     const valor = parseFloat(p.valor || 0);
+    if (Array.isArray(p.itens) && p.itens.length) {
+        const t = totaisItens(p.itens.map(i => ({ sem_iva: i.sem_iva || 0, iva: i.iva || 0 })));
+        if (t.semIva > 0) return { semIva: t.semIva, iva: t.iva, total: t.comIva, semDiscriminacao: false };
+        // Pedidos do portal: produtos sem preço por linha; o valor guardado na confirmação inclui IVA
+        const semIva = arred(valor / (1 + TAXA_IVA));
+        return { semIva, iva: arred(valor - semIva), total: valor, semDiscriminacao: false };
+    }
     return { semIva: valor, iva: 0, total: valor, semDiscriminacao: true };
 }
 
@@ -1151,9 +1293,12 @@ function calcularEstatisticasGlobais() {
     const soma = () => ({ semIva: 0, iva: 0, total: 0 });
     const geral = soma(), dp = soma();
     let totalPendente = 0, antigos = 0, valorAntigos = 0;
+    // Pedidos DP (incluindo os do portal, que não têm valor: o acerto é no fim do mês)
+    let dpConcluidos = 0, dpEmCurso = 0;
     const lista = pedidosDoPeriodo();
 
     lista.forEach(p => {
+        if (ehPedidoDP(p)) p.status === 'Concluído' ? dpConcluidos++ : dpEmCurso++;
         if (p.status === 'Concluído') {
             const v = decomporIva(p);
             [geral, ...(ehPedidoDP(p) ? [dp] : [])].forEach(s => {
@@ -1171,7 +1316,8 @@ function calcularEstatisticasGlobais() {
     document.getElementById('stat-faturado-detalhe').innerText = detalhe(geral);
     document.getElementById('stat-iva').innerText = euro(geral.iva);
     document.getElementById('stat-faturado-dp').innerText = euro(dp.total);
-    document.getElementById('stat-faturado-dp-detalhe').innerText = detalhe(dp);
+    document.getElementById('stat-faturado-dp-detalhe').innerText =
+        `${dpConcluidos} concluído(s) · ${dpEmCurso} em curso` + (dp.total ? `\n${detalhe(dp)}` : '');
     document.getElementById('stat-pendente').innerText = euro(totalPendente);
     document.getElementById('stat-qtd').innerText = lista.length;
 
@@ -1287,7 +1433,7 @@ function gerarPDF(id) {
     // ---------- Dados do pedido ----------
     const nomeCliente = p.clientes ? p.clientes.nome : 'Desconhecido';
     const telefone = p.clientes && p.clientes.telefone ? p.clientes.telefone : '-';
-    const dataDoc = p.created_at ? formatarData(p.created_at.slice(0, 10)) : new Date().toLocaleDateString('pt-PT');
+    const dataDoc = p.data_pedido ? formatarData(p.data_pedido.slice(0, 10)) : new Date().toLocaleDateString('pt-PT');
     const dataEntrega = p.data_entrega ? formatarData(p.data_entrega) : 'a combinar';
     const qtd = parseInt(p.quantidade_artigo) || 1;
     const valorTotal = parseFloat(p.valor) || 0;
