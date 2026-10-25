@@ -791,13 +791,58 @@ async function apagarPedido(id) {
 }
 
 // --- Pedido rápido DP ---
-function abrirModalDP() { document.getElementById('modal-dp').style.display = 'flex'; }
+function abrirModalDP() {
+    if (!document.querySelector('#lista-itens-dp .item-pedido')) adicionarItemDP();
+    document.getElementById('modal-dp').style.display = 'flex';
+}
 function fecharModalDP() { document.getElementById('modal-dp').style.display = 'none'; }
+
+// Produtos do pedido DP: quantidade × preço, sem IVA
+function adicionarItemDP() {
+    const div = document.createElement('div');
+    div.className = 'item-pedido';
+    div.innerHTML = `
+      <div class="item-linha">
+        <div><small>Nome do produto</small><input type="text" class="item-nome" placeholder="Ex: Toalha bordada"></div>
+        <button type="button" class="btn-small item-remover" title="Remover" onclick="this.closest('.item-pedido').remove(); atualizarTotalDP();">✕</button>
+      </div>
+      <small>Descrição</small><input type="text" class="item-descricao" placeholder="Ex: Bordado com nome e anjo">
+      <div class="item-linha">
+        <div><small>Qtd.</small><input type="number" class="item-qtd" min="1" step="1" value="1" oninput="atualizarTotalDP()"></div>
+        <div><small>Preço unit. (€)</small><input type="number" class="item-preco" min="0" step="0.01" placeholder="0.00" oninput="atualizarTotalDP()"></div>
+      </div>
+      <div class="item-calculo">
+        <span>Subtotal: <strong class="item-subtotal">€ 0.00</strong></span>
+      </div>`;
+    document.getElementById('lista-itens-dp').appendChild(div);
+    atualizarTotalDP();
+}
+
+// Os itens DP ficam com iva 0 para as estatísticas não lhes somarem IVA
+function lerItensDP() {
+    return [...document.querySelectorAll('#lista-itens-dp .item-pedido')].map(div => {
+        const quantidade = parseInt(div.querySelector('.item-qtd').value) || 1;
+        const preco = parseFloat(div.querySelector('.item-preco').value) || 0;
+        const subtotal = arred(quantidade * preco);
+        return {
+            nome: div.querySelector('.item-nome').value.trim(),
+            descricao: div.querySelector('.item-descricao').value.trim(),
+            quantidade, preco, sem_iva: subtotal, iva: 0, com_iva: subtotal, _div: div
+        };
+    });
+}
+
+function atualizarTotalDP() {
+    const itens = lerItensDP();
+    itens.forEach(i => i._div.querySelector('.item-subtotal').innerText = `€ ${i.sem_iva.toFixed(2)}`);
+    document.getElementById('total-dp').innerText = `€ ${arred(itens.reduce((s, i) => s + i.sem_iva, 0)).toFixed(2)}`;
+}
 
 async function criarPedidoDP() {
     const msg = document.getElementById('msg-dp-pedido');
-    const descricao = document.getElementById('dp-descricao').value;
-    const valor = document.getElementById('dp-valor').value;
+    const itens = lerItensDP().filter(i => i.nome || i.sem_iva > 0).map(({ _div, ...i }) => i);
+    const descricao = itens.map(i => i.nome).filter(Boolean).join(', ');
+    const valor = arred(itens.reduce((s, i) => s + i.sem_iva, 0));
     const dataEntrega = document.getElementById('dp-data-entrega').value;
 
     const dp = clientesGlobais.find(c => c.nome.trim().toUpperCase() === 'DP');
@@ -806,13 +851,14 @@ async function criarPedidoDP() {
         msg.innerText = 'Não existe um cliente com o nome "DP". Crie-o primeiro em "Novo Cliente".';
         return;
     }
-    if (!descricao || !valor) {
-        msg.style.color = 'red'; msg.innerText = 'Preencha a descrição e o valor.'; return;
+    if (!descricao) {
+        msg.style.color = 'red'; msg.innerText = 'Indique o nome de pelo menos um produto.'; return;
     }
 
     const formData = new FormData();
     formData.append('cliente_id', dp.id);
     formData.append('descricao', descricao);
+    formData.append('itens', JSON.stringify(itens));
     formData.append('origem_artigo', 'Cliente');
     formData.append('valor', valor);
     formData.append('data_entrega', dataEntrega || '');
@@ -826,7 +872,8 @@ async function criarPedidoDP() {
         const res = await api(`${URL_API}/pedidos`, { method: 'POST', body: formData });
         if (!res.ok) throw new Error('Falha ao guardar.');
 
-        ['dp-descricao', 'dp-valor', 'dp-data-entrega', 'dp-imagem', 'dp-dst'].forEach(id => document.getElementById(id).value = '');
+        ['dp-data-entrega', 'dp-imagem', 'dp-dst'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('lista-itens-dp').innerHTML = '';
         msg.innerText = '';
         fecharModalDP();
         carregarPedidos();
@@ -1316,8 +1363,11 @@ function calcularEstatisticasGlobais() {
     document.getElementById('stat-faturado-detalhe').innerText = detalhe(geral);
     document.getElementById('stat-iva').innerText = euro(geral.iva);
     document.getElementById('stat-faturado-dp').innerText = euro(dp.total);
+    // Os pedidos DP não levam IVA; o IVA mostrado é só de controlo (23% sobre o valor sem IVA)
+    // e não entra no IVA a entregar nem no relatório em Excel
     document.getElementById('stat-faturado-dp-detalhe').innerText =
-        `${dpConcluidos} concluído(s) · ${dpEmCurso} em curso` + (dp.total ? `\n${detalhe(dp)}` : '');
+        `${dpConcluidos} concluído(s) · ${dpEmCurso} em curso` +
+        (dp.total ? `\nSem IVA: ${euro(dp.semIva)}\nIVA 23% (controlo): ${euro(arred(dp.semIva * TAXA_IVA))}` : '');
     document.getElementById('stat-pendente').innerText = euro(totalPendente);
     document.getElementById('stat-qtd').innerText = lista.length;
 
@@ -1349,9 +1399,16 @@ function exportarRelatorio(tipo) {
 
     const base = p => [p.id, p.clientes ? p.clientes.nome : 'Desconhecido', p.descricao || '', formatarData(p.data_entrega)];
 
-    if (tipo === 'faturacao' || tipo === 'dp') {
-        const concluidos = lista.filter(p => p.status === 'Concluído' && (tipo === 'faturacao' || ehPedidoDP(p)));
-        titulo = tipo === 'dp' ? 'Faturação DP' : 'Faturação Geral';
+    if (tipo === 'dp') {
+        // Sem colunas de IVA: o IVA da DP é só de controlo no cartão
+        titulo = 'Faturação DP';
+        cabecalho = ['Pedido', 'Cliente', 'Descrição', 'Data de Entrega', 'Método de Pagamento', 'Valor (€)'];
+        linhas = lista.filter(p => p.status === 'Concluído' && ehPedidoDP(p))
+            .map(p => [...base(p), p.metodo_pagamento || '', decomporIva(p).total]);
+        totais = ['', '', '', '', 'TOTAL', linhas.reduce((t, l) => t + l[5], 0)];
+    } else if (tipo === 'faturacao') {
+        const concluidos = lista.filter(p => p.status === 'Concluído');
+        titulo = 'Faturação Geral';
         cabecalho = ['Pedido', 'Cliente', 'Descrição', 'Data de Entrega', 'Método de Pagamento', 'Sem IVA (€)', 'IVA 23% (€)', 'Total (€)', 'Observação'];
         linhas = concluidos.map(p => {
             const v = decomporIva(p);
@@ -1418,10 +1475,64 @@ function limparFiltroEstatisticas() {
 // 6. GERADOR DE PDF (jsPDF)
 // ============================================================================
 
-function gerarPDF(id) {
+// Logo para o PDF, recortado das margens brancas (carregado uma vez)
+let logoPDF;
+function carregarLogoPDF() {
+    if (!logoPDF) logoPDF = new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const c = document.createElement('canvas');
+                c.width = img.naturalWidth; c.height = img.naturalHeight;
+                const ctx = c.getContext('2d');
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, c.width, c.height);
+                ctx.drawImage(img, 0, 0);
+                const px = ctx.getImageData(0, 0, c.width, c.height).data;
+                let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+                for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) {
+                    const i = (y * c.width + x) * 4;
+                    if (px[i] < 235 || px[i + 1] < 235 || px[i + 2] < 235) {
+                        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+                    }
+                }
+                if (x1 < 0) return resolve(null);
+                const r = document.createElement('canvas');
+                r.width = x1 - x0 + 1; r.height = y1 - y0 + 1;
+                r.getContext('2d').drawImage(c, x0, y0, r.width, r.height, 0, 0, r.width, r.height);
+                resolve({ dados: r.toDataURL('image/png'), proporcao: r.width / r.height });
+            } catch (e) { resolve(null); }
+        };
+        img.onerror = () => resolve(null);
+        img.src = 'logo.png';
+    });
+    return logoPDF;
+}
+
+// Imagem do desenho (PNG) para o PDF; devolve null se não carregar
+async function carregarImagemPDF(url) {
+    try {
+        const blob = await (await fetch(url)).blob();
+        const bitmap = await createImageBitmap(blob);
+        const c = document.createElement('canvas');
+        c.width = bitmap.width; c.height = bitmap.height;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(bitmap, 0, 0);
+        return { dados: c.toDataURL('image/png'), proporcao: c.width / c.height };
+    } catch (e) {
+        return null;
+    }
+}
+
+// Pensado para impressora laser a preto e branco: sem fundos cheios, só o logo e linhas finas
+async function gerarPDF(id) {
     const { jsPDF } = window.jspdf;
     const p = pedidosGlobais.find(item => item.id === id);
     if (!p) return;
+    const [logo, ...imagens] = await Promise.all([carregarLogoPDF(), ...lerUrls(p.arquivo_imagem).map(carregarImagemPDF)]);
+    const desenhos = imagens.filter(Boolean);
 
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
     const CASTANHO = [140, 94, 60];
@@ -1443,16 +1554,21 @@ function gerarPDF(id) {
     const tamanhos = p.tamanhos_artigo ? p.tamanhos_artigo : '-';
 
     // ---------- PÁGINA 1: cabeçalho ----------
-    doc.setFillColor(...CASTANHO);
-    doc.rect(0, 0, 210, 35, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(26);
-    doc.text('BORDAVEIRO', 105, 19, { align: 'center' });
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(11);
-    doc.setTextColor(240, 228, 216);
-    doc.text('Personalização e Bordados', 105, 26.5, { align: 'center' });
+    if (logo) {
+        const altura = 24, largura = Math.min(altura * logo.proporcao, 90);
+        doc.addImage(logo.dados, 'PNG', 105 - largura / 2, 6, largura, largura / logo.proporcao);
+    } else {
+        doc.setTextColor(...CASTANHO);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(26);
+        doc.text('BORDAVEIRO', 105, 19, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        doc.text('Personalização e Bordados', 105, 26.5, { align: 'center' });
+    }
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.3);
+    doc.line(MARGEM, 33, DIREITA, 33);
 
     // ---------- Título e número ----------
     doc.setTextColor(...CASTANHO);
@@ -1482,14 +1598,29 @@ function gerarPDF(id) {
     doc.text(nomeCliente, 43, 60);
     doc.text(String(telefone), 39, 66);
 
+    // ---------- Imagens do desenho (à direita do cliente) ----------
+    let inicioTabela = 79;
+    if (desenhos.length) {
+        const X0 = 100, TOPO = 57, ALTURA = 32, ESPACO = 3;
+        const largCaixa = (DIREITA - X0 - ESPACO * (desenhos.length - 1)) / desenhos.length;
+        desenhos.forEach((img, i) => {
+            // Encaixa a imagem na caixa mantendo a proporção, encostada à direita
+            let w = largCaixa, h = w / img.proporcao;
+            if (h > ALTURA) { h = ALTURA; w = h * img.proporcao; }
+            const x = X0 + i * (largCaixa + ESPACO) + (largCaixa - w);
+            doc.addImage(img.dados, 'PNG', x, TOPO + (ALTURA - h) / 2, w, h);
+        });
+        inicioTabela = TOPO + ALTURA + 7;
+    }
+
     // ---------- Tabela ----------
     const itens = Array.isArray(p.itens) ? p.itens : [];
     const estiloTabela = {
-        startY: 79,
+        startY: inicioTabela,
         margin: { left: MARGEM, right: 14 },
         theme: 'grid',
         styles: { font: 'helvetica', fontSize: 10, textColor: CINZA, lineColor: [200, 200, 200], lineWidth: 0.2, cellPadding: { top: 6, bottom: 6, left: 5, right: 4 } },
-        headStyles: { fillColor: CASTANHO, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9.5, lineWidth: 0, cellPadding: { top: 5, bottom: 5, left: 5, right: 4 } }
+        headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 9.5, lineColor: [120, 120, 120], lineWidth: { bottom: 0.5 }, cellPadding: { top: 5, bottom: 5, left: 5, right: 4 } }
     };
 
     if (itens.length) {
@@ -1570,12 +1701,13 @@ function gerarPDF(id) {
 
     // ---------- PÁGINA 2: termos e condições ----------
     doc.addPage();
-    doc.setFillColor(...CASTANHO);
-    doc.rect(0, 0, 210, 15, 'F');
-    doc.setTextColor(255, 255, 255);
+    doc.setTextColor(0, 0, 0);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
-    doc.text('TERMOS DE SERVIÇO E CONDIÇÕES DO ORÇAMENTO', 105, 9, { align: 'center' });
+    doc.text('TERMOS DE SERVIÇO E CONDIÇÕES DO ORÇAMENTO', 105, 11, { align: 'center' });
+    doc.setDrawColor(120, 120, 120);
+    doc.setLineWidth(0.4);
+    doc.line(MARGEM, 14, DIREITA, 14);
 
     // estilo: 'n' normal, 'v' vermelho normal, 'vb' vermelho negrito
     const secoes = [
@@ -1627,8 +1759,8 @@ function gerarPDF(id) {
     });
 
     // ---------- Rodapé ----------
-    doc.setDrawColor(...CASTANHO);
-    doc.setLineWidth(1);
+    doc.setDrawColor(160, 160, 160);
+    doc.setLineWidth(0.3);
     doc.line(MARGEM, 274.5, DIREITA, 274.5);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
