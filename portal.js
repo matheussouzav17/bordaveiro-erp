@@ -235,9 +235,11 @@ function mostrarPortal() {
     carregarPedidos();
     carregarConta();
     // O estado e as datas mudam quando a Bordaveiro atualiza o pedido: volta a carregar
-    // a cada minuto e sempre que o cliente regressa a este separador
-    setInterval(() => { if (!document.hidden) carregarPedidos(); }, 60 * 1000);
+    // a cada minuto (mesmo noutro separador, para o sinal tocar) e ao regressar a este separador
+    setInterval(carregarPedidos, 60 * 1000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) carregarPedidos(); });
+    // O browser só deixa tocar som depois de o cliente interagir com a página
+    ['pointerdown', 'keydown'].forEach(evento => document.addEventListener(evento, prepararSom));
 }
 
 function mudarPagina(pagina) {
@@ -491,6 +493,8 @@ async function cancelarPedido(id) {
         const res = await api(`${URL_API}/portal/pedidos/${id}/cancelar`, { method: 'POST' });
         const dados = await res.json();
         if (!res.ok) throw new Error(dados.erro);
+        // Foi o próprio cliente que mudou o estado: não há nada a avisar
+        estadosVistos[id] = estadoCliente({ status: 'Cancelado' }).texto;
     } catch (e) {
         if (e.message !== 'Sessão expirada') alert(e.message || 'Não foi possível cancelar o pedido.');
     }
@@ -509,6 +513,66 @@ function linhaEntrega(p) {
     return `<strong>Entrega confirmada: ${formatarData(p.data_entrega)}</strong>`;
 }
 
+// --- Aviso de mudança de estado ---
+// O último estado visto de cada pedido fica guardado, para avisar também
+// do que mudou enquanto o portal esteve fechado
+const CHAVE_ESTADOS = 'estados_portal';
+const DURACAO_AVISO = 15 * 1000;
+const estadosVistos = lerEstadosVistos();
+let contextoAudio = null;
+let somPendente = false;
+
+function lerEstadosVistos() {
+    try { return JSON.parse(localStorage.getItem(CHAVE_ESTADOS)) || {}; } catch (e) { return {}; }
+}
+
+function avisarMudancasEstado(pedidos) {
+    const mudados = pedidos.filter(p => estadosVistos[p.id] && estadosVistos[p.id] !== estadoCliente(p).texto);
+    pedidos.forEach(p => estadosVistos[p.id] = estadoCliente(p).texto);
+    try { localStorage.setItem(CHAVE_ESTADOS, JSON.stringify(estadosVistos)); } catch (e) { /* só perde o aviso de mudanças com o portal fechado */ }
+
+    if (!mudados.length) return;
+    mudados.forEach(mostrarAvisoEstado);
+    tocarSinal();
+}
+
+function mostrarAvisoEstado(p) {
+    const estado = estadoCliente(p);
+    const aviso = document.createElement('div');
+    aviso.className = 'portal-toast';
+    aviso.style.borderLeftColor = estado.cor;
+    aviso.innerHTML = `
+      <div><strong>Pedido nº ${p.id}</strong><br>O estado mudou para: ${escapar(estado.texto)}</div>
+      <button type="button" title="Fechar" onclick="this.parentElement.remove()">✕</button>`;
+    document.getElementById('avisos-estado').appendChild(aviso);
+    setTimeout(() => aviso.remove(), DURACAO_AVISO);
+}
+
+async function prepararSom() {
+    try {
+        contextoAudio ??= new AudioContext();
+        await contextoAudio.resume();
+        if (somPendente) tocarSinal();
+    } catch (e) { /* sem som, o aviso no ecrã continua visível */ }
+}
+
+// Duas notas curtas; se o browser ainda não permitir som, toca na próxima interação
+function tocarSinal() {
+    if (contextoAudio?.state !== 'running') { somPendente = true; return; }
+    somPendente = false;
+    [[880, 0], [1175, 0.18]].forEach(([frequencia, atraso]) => {
+        const inicio = contextoAudio.currentTime + atraso;
+        const nota = contextoAudio.createOscillator();
+        const volume = contextoAudio.createGain();
+        nota.frequency.value = frequencia;
+        volume.gain.setValueAtTime(0.25, inicio);
+        volume.gain.exponentialRampToValueAtTime(0.001, inicio + 0.3);
+        nota.connect(volume).connect(contextoAudio.destination);
+        nota.start(inicio);
+        nota.stop(inicio + 0.3);
+    });
+}
+
 let pedidosPortal = [];
 
 async function carregarPedidos() {
@@ -517,6 +581,7 @@ async function carregarPedidos() {
         const pedidos = await res.json();
         if (!res.ok) throw new Error(pedidos.erro);
         pedidosPortal = pedidos;
+        avisarMudancasEstado(pedidos);
         document.getElementById('ultima-atualizacao').innerText =
             `Atualizado às ${new Date().toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}`;
         renderizarPedidos();

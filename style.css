@@ -241,3 +241,7 @@ h1, h2, h3 { color: #4A2511; margin-top: 0; }
   .btn-nav { flex: 1; padding: 10px; }
   .login-card { width: 90%; }
 }
+/* Avisos de mudança de estado no portal */
+#avisos-estado { position: fixed; top: 16px; right: 16px; z-index: 2000; display: flex; flex-direction: column; gap: 10px; width: 320px; max-width: calc(100vw - 32px); }
+.portal-toast { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; background: white; border-left: 5px solid #8C5E3C; border-radius: 6px; padding: 12px 14px; box-shadow: 0 6px 18px rgba(0,0,0,0.2); font-size: 14px; color: #4A2511; }
+.portal-toast button { background: none; border: none; color: #888; font-size: 14px; cursor: pointer; padding: 0; }
