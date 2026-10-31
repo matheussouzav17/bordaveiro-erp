@@ -29,7 +29,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 
 // Multer guarda temporariamente os ficheiros em memória; só aceita PNG e DST até 15 MB
 // Equipa: PNG e DST em campos separados. Portal: um único campo com imagens, PDF e matrizes de bordado
-const EXTENSOES = { imagem: /\.png$/i, dst: /\.dst$/i, ficheiro: /\.(png|jpe?g|pdf|dst|emb)$/i };
+const EXTENSOES = { imagem: /\.png$/i, dst: /\.dst$/i, ficheiro: /\.(png|jpe?g|pdf|dst|emb)$/i, pdf: /\.pdf$/i };
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 },
@@ -89,7 +89,7 @@ function paraUrlGuardado(url) {
 async function assinarFicheiros(pedidos) {
   const porBucket = {};
   for (const p of pedidos) {
-    for (const campo of ['arquivo_imagem', 'arquivo_dst']) {
+    for (const campo of ['arquivo_imagem', 'arquivo_dst', 'arquivo_pdf']) {
       for (const url of lerUrls(p[campo])) {
         const local = localDoFicheiro(url);
         if (local) (porBucket[local.bucket] ??= new Set()).add(local.caminho);
@@ -105,7 +105,7 @@ async function assinarFicheiros(pedidos) {
   }
 
   for (const p of pedidos) {
-    for (const campo of ['arquivo_imagem', 'arquivo_dst']) {
+    for (const campo of ['arquivo_imagem', 'arquivo_dst', 'arquivo_pdf']) {
       const urls = lerUrls(p[campo]).map(url => {
         const local = localDoFicheiro(url);
         return (local && assinados[`${local.bucket}/${local.caminho}`]) || url;
@@ -710,8 +710,46 @@ app.patch('/pedidos/:id/confirmar', async (req, res) => {
   res.json({ sucesso: true });
 });
 
+// O PDF gerado na aplicação: cada pedido guarda só a última versão
+async function apagarPdfGuardado(url) {
+  const local = localDoFicheiro(url);
+  if (!local) return;
+  const { error } = await supabase.storage.from(local.bucket).remove([local.caminho]);
+  if (error) console.error('Erro ao apagar PDF:', error.message);
+}
+
+app.post('/pedidos/:id/pdf', (req, res, next) => {
+  upload.single('pdf')(req, res, erro => {
+    if (!erro) return next();
+    const mensagem = erro.code === 'LIMIT_FILE_SIZE' ? 'O PDF pode ter no máximo 15 MB.' : 'Só são aceites ficheiros PDF.';
+    res.status(400).json({ erro: mensagem });
+  });
+}, async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ erro: 'PDF em falta.' });
+    const { data: pedido, error: erroPedido } = await supabase
+      .from('pedidos').select('arquivo_pdf').eq('id', req.params.id).maybeSingle();
+    if (erroPedido) throw erroPedido;
+    if (!pedido) return res.status(404).json({ erro: 'Pedido não encontrado.' });
+
+    const url = await enviarFicheiro(req.file, 'matrizes', 'pdf');
+    const { error } = await supabase.from('pedidos').update({ arquivo_pdf: url }).eq('id', req.params.id);
+    if (error) {
+      await apagarPdfGuardado(url);
+      throw error;
+    }
+    await apagarPdfGuardado(pedido.arquivo_pdf);
+    res.json({ sucesso: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ erro: 'Erro ao guardar o PDF.' });
+  }
+});
+
 app.delete('/pedidos/:id', async (req, res) => {
+  const { data: pedido } = await supabase.from('pedidos').select('arquivo_pdf').eq('id', req.params.id).maybeSingle();
   await supabase.from('pedidos').delete().eq('id', req.params.id);
+  await apagarPdfGuardado(pedido?.arquivo_pdf);
   res.json({ sucesso: true });
 });
 

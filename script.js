@@ -508,6 +508,7 @@ function renderizarPedidos() {
 
         const btnEditar = `<button class="btn-small" style="background:#f39c12;" onclick="abrirEditarPedido(${p.id})">Editar</button>`;
 
+        const [urlPdf] = lerUrls(p.arquivo_pdf);
         const urlsDst = lerUrls(p.arquivo_dst);
         const botaoDst = botoesFicheiros(urlsDst);
 
@@ -529,7 +530,7 @@ function renderizarPedidos() {
       <div class="cartao-pedido${pedidosAbertos.has(p.id) ? ' aberto' : ''}" onclick="alternarDetalhesPedido(event, ${p.id})" style="border-left: 5px solid ${corBorda}; background: white; padding: 15px; margin-bottom: 12px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
         <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom: 8px; gap: 10px; flex-wrap: wrap;">
           <strong style="font-size: 15px; color: #4A2511;">#${p.id} - ${escapar(p.descricao)}${ehOrcamento ? ' <span style="font-size:11px; background:#E5A83B; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ORÇAMENTO</span>' : ''}${doPortal ? ' <span class="badge-portal">PORTAL</span>' : ''}${cancelado ? ' <span class="badge-cancelado">CANCELADO PELO CLIENTE</span>' : ''}</strong>
-          <div style="display:flex; gap:6px; flex-wrap: wrap;">${botaoDst}<button class="btn-small" style="background:#A67B5B;" onclick="gerarPDF(${p.id})">Gerar PDF</button></div>
+          <div style="display:flex; gap:6px; flex-wrap: wrap;">${botaoDst}${urlPdf ? `<a href="${escapar(urlPdf)}" target="_blank" class="btn-small" style="background:#c0392b;">PDF guardado</a>` : ''}<button class="btn-small" style="background:#A67B5B;" onclick="gerarPDF(${p.id})">Gerar PDF</button></div>
         </div>
         <div class="pedido-corpo${urlsImagem.length > 1 ? ' varias-imagens' : ''}">
           ${miniatura}
@@ -1744,18 +1745,22 @@ function carregarLogoPDF() {
     return logoPDF;
 }
 
+const MAX_LADO_IMAGEM_PDF = 900; // píxeis
+
 // Imagem do desenho (PNG) para o PDF; devolve null se não carregar
 async function carregarImagemPDF(url) {
     try {
         const blob = await (await fetch(url)).blob();
         const bitmap = await createImageBitmap(blob);
+        // Reduz e comprime: as imagens ocupam até 32 mm de altura e são o que mais pesa no PDF
+        const escala = Math.min(MAX_LADO_IMAGEM_PDF / Math.max(bitmap.width, bitmap.height), 1);
         const c = document.createElement('canvas');
-        c.width = bitmap.width; c.height = bitmap.height;
+        c.width = Math.round(bitmap.width * escala); c.height = Math.round(bitmap.height * escala);
         const ctx = c.getContext('2d');
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, c.width, c.height);
-        ctx.drawImage(bitmap, 0, 0);
-        return { dados: c.toDataURL('image/png'), proporcao: c.width / c.height };
+        ctx.drawImage(bitmap, 0, 0, c.width, c.height);
+        return { dados: c.toDataURL('image/jpeg', 0.85), proporcao: c.width / c.height };
     } catch (e) {
         return null;
     }
@@ -1769,7 +1774,7 @@ async function gerarPDF(id) {
     const [logo, ...imagens] = await Promise.all([carregarLogoPDF(), ...lerUrls(p.arquivo_imagem).map(carregarImagemPDF)]);
     const desenhos = imagens.filter(Boolean);
 
-    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
     const CASTANHO = [140, 94, 60];
     const CINZA = [85, 85, 85];
     const VERMELHO = [192, 38, 38];
@@ -1843,7 +1848,7 @@ async function gerarPDF(id) {
             let w = largCaixa, h = w / img.proporcao;
             if (h > ALTURA) { h = ALTURA; w = h * img.proporcao; }
             const x = X0 + i * (largCaixa + ESPACO) + (largCaixa - w);
-            doc.addImage(img.dados, 'PNG', x, TOPO + (ALTURA - h) / 2, w, h);
+            doc.addImage(img.dados, 'JPEG', x, TOPO + (ALTURA - h) / 2, w, h);
         });
         inicioTabela = TOPO + ALTURA + 7;
     }
@@ -2003,4 +2008,18 @@ async function gerarPDF(id) {
     doc.text('Bordaveiro - Documento gerado eletronicamente', 105, 281, { align: 'center' });
 
     doc.save(`Bordaveiro_Pedido_${p.id}.pdf`);
+    await guardarPDFNaNuvem(p.id, doc.output('blob'));
+}
+
+// Substitui o PDF guardado do pedido; o ficheiro descarregado não depende disto
+async function guardarPDFNaNuvem(id, pdf) {
+    const formData = new FormData();
+    formData.append('pdf', pdf, `Bordaveiro_Pedido_${id}.pdf`);
+    try {
+        const res = await api(`${URL_API}/pedidos/${id}/pdf`, { method: 'POST', body: formData });
+        if (!res.ok) throw new Error('Falha ao guardar.');
+        await carregarPedidos();
+    } catch (e) {
+        alert('O PDF foi descarregado, mas não foi possível guardá-lo na nuvem.');
+    }
 }
