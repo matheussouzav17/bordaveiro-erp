@@ -327,7 +327,7 @@ const ehImagem = ficheiro => /\.(png|jpe?g)$/i.test(ficheiro.originalname);
 const texto = (valor, max) => String(valor ?? '').trim().slice(0, max);
 const dataValida = valor => (/^\d{4}-\d{2}-\d{2}$/.test(valor || '') ? valor : null);
 
-// Só guarda nome, descrição, letra, local e quantidade de cada produto
+// Só guarda nome, descrição, cor/código da linha, cor, género, tamanhos, letra, local e quantidade de cada produto
 function itensDoCliente(json) {
   let itens;
   try { itens = JSON.parse(json || '[]'); } catch { return []; }
@@ -336,6 +336,10 @@ function itensDoCliente(json) {
     .map(i => ({
       nome: texto(i?.nome, 150),
       descricao: texto(i?.descricao, 500),
+      codigos: texto(i?.codigos, 300),
+      cor: texto(i?.cor, 100),
+      genero: ['Masculino', 'Feminino'].includes(i?.genero) ? i.genero : '',
+      tamanhos: texto(i?.tamanhos, 300),
       letra: texto(i?.letra, 100),
       local: texto(i?.local, 150),
       quantidade: Math.min(Math.max(parseInt(i?.quantidade) || 1, 1), 10000)
@@ -359,7 +363,7 @@ app.get('/portal/pedidos', apenasCliente, async (req, res) => {
 
   // Os preços que a Bordaveiro acrescentar aos produtos não são mostrados ao cliente
   (data || []).forEach(p => {
-    if (Array.isArray(p.itens)) p.itens = p.itens.map(({ nome, descricao, letra, local, quantidade }) => ({ nome, descricao, letra, local, quantidade }));
+    if (Array.isArray(p.itens)) p.itens = p.itens.map(({ nome, descricao, codigos, cor, genero, tamanhos, letra, local, quantidade }) => ({ nome, descricao, codigos, cor, genero, tamanhos, letra, local, quantidade }));
   });
   res.json(await assinarFicheiros(data || []));
 });
@@ -388,7 +392,7 @@ app.post('/portal/pedidos', apenasCliente, (req, res, next) => {
         status: ESTADO_PEDIDO_PORTAL,
         descricao: itens.map(i => i.nome).join(', ').slice(0, 300),
         itens,
-        cor_linha: texto(req.body.cor_linha, 300) || null,
+        codigos_linhas: [...new Set(itens.map(i => i.codigos).filter(Boolean))].join(', '),
         data_pretendida: dataValida(req.body.data_pretendida),
         origem_artigo: 'Cliente',
         valor: 0,

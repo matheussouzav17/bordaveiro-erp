@@ -526,7 +526,7 @@ function renderizarPedidos() {
         }
 
         painel.innerHTML += `
-      <div style="border-left: 5px solid ${corBorda}; background: white; padding: 15px; margin-bottom: 12px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+      <div class="cartao-pedido${pedidosAbertos.has(p.id) ? ' aberto' : ''}" onclick="alternarDetalhesPedido(event, ${p.id})" style="border-left: 5px solid ${corBorda}; background: white; padding: 15px; margin-bottom: 12px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
         <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom: 8px; gap: 10px; flex-wrap: wrap;">
           <strong style="font-size: 15px; color: #4A2511;">#${p.id} - ${escapar(p.descricao)}${ehOrcamento ? ' <span style="font-size:11px; background:#E5A83B; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ORÇAMENTO</span>' : ''}${doPortal ? ' <span class="badge-portal">PORTAL</span>' : ''}${cancelado ? ' <span class="badge-cancelado">CANCELADO PELO CLIENTE</span>' : ''}</strong>
           <div style="display:flex; gap:6px; flex-wrap: wrap;">${botaoDst}<button class="btn-small" style="background:#A67B5B;" onclick="gerarPDF(${p.id})">Gerar PDF</button></div>
@@ -544,12 +544,62 @@ function renderizarPedidos() {
                 `<br><strong>${escapar(i.nome)}:</strong> ${escapar(letraLocal(i))}`).join('')}
           </p>
         </div>
+        <div class="pedido-ver-detalhes"></div>
+        ${detalhesPedido(p)}
         <div style="display:flex; gap:10px; margin-top:12px; flex-wrap: wrap;">
           ${btnConcluir} ${btnWhatsApp} ${btnEditar}
           <button class="btn-small" style="background:#e74c3c;" onclick="apagarPedido(${p.id})">Eliminar</button>
         </div>
       </div>`;
     });
+}
+
+// Encomendas com os detalhes abertos (mantêm-se abertas quando a lista é redesenhada)
+const pedidosAbertos = new Set();
+
+function alternarDetalhesPedido(evento, id) {
+    // Botões e links mantêm a sua função; selecionar texto também não abre nem fecha
+    if (evento.target.closest('button, a') || String(window.getSelection())) return;
+    if (pedidosAbertos.has(id)) pedidosAbertos.delete(id); else pedidosAbertos.add(id);
+    evento.currentTarget.classList.toggle('aberto');
+}
+
+function detalhesPedido(p) {
+    const euro = n => `€ ${parseFloat(n).toFixed(2)}`;
+    const itens = Array.isArray(p.itens) ? p.itens : [];
+    const produtos = itens.map(i => `
+      <div class="detalhe-produto">
+        <div class="detalhe-produto-linha">
+          <strong>${escapar(i.quantidade || 1)} × ${escapar(i.nome)}</strong>
+          ${i.com_iva > 0 ? `<strong>${euro(i.com_iva)}</strong>` : ''}
+        </div>
+        ${i.preco > 0 ? `<small>${euro(i.preco)} / unid.${i.iva > 0 ? ' s/ IVA' : ''}</small>` : ''}
+        ${i.descricao ? `<small>${escapar(i.descricao)}</small>` : ''}
+        ${i.codigos ? `<small>Linhas: ${escapar(i.codigos)}</small>` : ''}
+        ${corTamanhos(i) ? `<small>${escapar(corTamanhos(i))}</small>` : ''}
+        ${letraLocal(i) ? `<small>${escapar(letraLocal(i))}</small>` : ''}
+      </div>`).join('');
+
+    const campos = [
+        ['Data do pedido', p.data_pedido && formatarData(p.data_pedido.slice(0, 10))],
+        ['Data de produção', formatarData(p.data_producao)],
+        ['Origem do artigo', p.origem_artigo],
+        ['Artigo', p.tipo_artigo],
+        ['Quantidade do artigo', p.quantidade_artigo],
+        ['Tamanhos', p.tamanhos_artigo],
+        ['Marca', p.marca_artigo],
+        ['Opção bebé', p.detalhe_bebe],
+        ['Pagamento', p.tipo_pagamento],
+        ['Método de pagamento', p.metodo_pagamento],
+        ['Valor pago', parseFloat(p.valor_pago) > 0 && euro(p.valor_pago)]
+    ].filter(([, valor]) => valor);
+
+    return `
+      <div class="pedido-detalhes">
+        <p><strong>Descrição:</strong> ${escapar(p.descricao)}</p>
+        ${produtos}
+        ${campos.map(([rotulo, valor]) => `<p><strong>${rotulo}:</strong> ${escapar(valor)}</p>`).join('')}
+      </div>`;
 }
 
 function limparFiltroCalendarioPedidos() {
@@ -563,6 +613,42 @@ const TAXA_IVA = 0.23;
 const arred = n => Math.round(n * 100) / 100;
 // "Letra: X · Local: Y" de um produto (vazio se não tiver nenhum dos dois)
 const letraLocal = i => [i.letra && `Letra: ${i.letra}`, i.local && `Local: ${i.local}`].filter(Boolean).join(' · ');
+// "Cor: X · Masculino · Tamanhos: Y" de um produto (vazio se não tiver nenhum)
+const corTamanhos = i => [i.cor && `Cor: ${i.cor}`, i.genero, i.tamanhos && `Tamanhos: ${i.tamanhos}`].filter(Boolean).join(' · ');
+
+// --- Tamanhos do produto: uma quantidade por tamanho, guardadas como "3 S, 3 M, 1 XL" ---
+const TAMANHOS = ['Infantil', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'];
+
+const camposTamanhos = () => `
+      <small>Tamanhos (quantidade de cada)</small>
+      <div class="item-tamanhos">${TAMANHOS.map(t => `
+        <label><span>${t}</span><input type="number" min="0" step="1" placeholder="0" data-tamanho="${t}" oninput="somarTamanhos(this)"></label>`).join('')}
+      </div>`;
+
+const lerTamanhos = div => [...div.querySelectorAll('[data-tamanho]')]
+    .filter(input => parseInt(input.value) > 0)
+    .map(input => `${parseInt(input.value)} ${input.dataset.tamanho}`)
+    .join(', ');
+
+function preencherTamanhos(div, texto) {
+    (texto || '').split(', ').forEach(parte => {
+        const [quantidade, tamanho] = parte.split(' ');
+        const input = div.querySelector(`[data-tamanho="${tamanho}"]`);
+        if (input) input.value = quantidade;
+    });
+}
+
+// A quantidade do produto passa a ser a soma dos tamanhos
+function somarTamanhos(input) {
+    const div = input.closest('.item-pedido');
+    const total = [...div.querySelectorAll('[data-tamanho]')].reduce((s, i) => s + Math.max(parseInt(i.value) || 0, 0), 0);
+    if (!total) return;
+    const qtd = div.querySelector('.item-qtd');
+    qtd.value = total;
+    qtd.dispatchEvent(new Event('input'));
+}
+// Códigos de linhas de todos os produtos, para o campo codigos_linhas do pedido
+const juntarCodigos = itens => [...new Set(itens.map(i => i.codigos).filter(Boolean))].join(', ');
 
 function adicionarItemPedido(item = {}) {
     const div = document.createElement('div');
@@ -573,6 +659,12 @@ function adicionarItemPedido(item = {}) {
         <button type="button" class="btn-small item-remover" title="Remover" onclick="this.closest('.item-pedido').remove(); atualizarTotaisIva();">✕</button>
       </div>
       <small>Descrição</small><input type="text" class="item-descricao" placeholder="Ex: Bordado com nome e anjo">
+      <small>Códigos das linhas</small><input type="text" class="item-codigos" placeholder="Ex: 1143, 1000">
+      <div class="item-linha">
+        <div><small>Cor do artigo</small><input type="text" class="item-cor" placeholder="Ex: Preto"></div>
+        <div><small>Género</small><select class="item-genero"><option value="">—</option><option>Masculino</option><option>Feminino</option></select></div>
+      </div>
+      ${camposTamanhos()}
       <div class="item-linha">
         <div><small>Qtd.</small><input type="number" class="item-qtd" min="1" step="1" value="1" oninput="atualizarTotaisIva()"></div>
         <div><small>Preço unit. s/ IVA (€)</small><input type="number" class="item-preco" min="0" step="0.01" placeholder="0.00" oninput="atualizarTotaisIva()"></div>
@@ -584,6 +676,10 @@ function adicionarItemPedido(item = {}) {
       </div>`;
     div.querySelector('.item-nome').value = item.nome || '';
     div.querySelector('.item-descricao').value = item.descricao || '';
+    div.querySelector('.item-codigos').value = item.codigos || '';
+    div.querySelector('.item-cor').value = item.cor || '';
+    div.querySelector('.item-genero').value = item.genero || '';
+    preencherTamanhos(div, item.tamanhos);
     if (item.quantidade) div.querySelector('.item-qtd').value = item.quantidade;
     if (item.preco) div.querySelector('.item-preco').value = item.preco;
     document.getElementById('lista-itens-pedido').appendChild(div);
@@ -600,6 +696,10 @@ function lerItensPedido() {
         return {
             nome: div.querySelector('.item-nome').value.trim(),
             descricao: div.querySelector('.item-descricao').value.trim(),
+            codigos: div.querySelector('.item-codigos').value.trim(),
+            cor: div.querySelector('.item-cor').value.trim(),
+            genero: div.querySelector('.item-genero').value,
+            tamanhos: lerTamanhos(div),
             quantidade, preco, sem_iva: semIva, iva, com_iva: arred(semIva + iva), _div: div
         };
     });
@@ -634,7 +734,7 @@ function itensValidos() {
 }
 
 function limparFormularioPedido() {
-    ['pesquisa-cliente-input', 'novo-cliente-id', 'nova-descricao', 'novo-valor', 'nova-linha',
+    ['pesquisa-cliente-input', 'novo-cliente-id', 'novo-valor',
      'novo-valor-pago', 'nova-imagem', 'novo-dst', 'nova-data-producao', 'nova-data-entrega']
         .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     document.getElementById('lista-itens-pedido').innerHTML = '';
@@ -651,12 +751,11 @@ function construirFormDataPedido(clienteId, status) {
     formData.append('cliente_id', clienteId);
     formData.append('status', status);
     const itens = itensValidos();
-    // Sem descrição principal, usa os nomes dos produtos
-    const descricao = document.getElementById('nova-descricao').value || itens.map(i => i.nome).filter(Boolean).join(', ');
-    formData.append('descricao', descricao);
+    // A descrição do pedido são os nomes dos produtos
+    formData.append('descricao', itens.map(i => i.nome).filter(Boolean).join(', '));
     formData.append('itens', JSON.stringify(itens));
     formData.append('origem_artigo', document.getElementById('nova-origem').value);
-    formData.append('codigos_linhas', document.getElementById('nova-linha').value);
+    formData.append('codigos_linhas', juntarCodigos(lerItensPedido()));
     formData.append('valor', document.getElementById('novo-valor').value || 0);
     formData.append('data_producao', document.getElementById('nova-data-producao').value || '');
     formData.append('data_entrega', document.getElementById('nova-data-entrega').value || '');
@@ -728,9 +827,9 @@ async function guardarPedido(status = 'Pendente') {
     const msg = document.getElementById('msg-novo-pedido');
 
     if (!clienteId) { msg.style.color = 'red'; msg.innerText = 'Selecione um cliente.'; return; }
-    const temDescricao = document.getElementById('nova-descricao').value || itensValidos().some(i => i.nome);
-    if (ehOrcamento && (!temDescricao || !(parseFloat(document.getElementById('novo-valor').value) > 0))) {
-        msg.style.color = 'red'; msg.innerText = 'Para gerar o orçamento, preencha a descrição e o valor.'; return;
+    if (!itensValidos().some(i => i.nome)) { msg.style.color = 'red'; msg.innerText = 'Indique o nome de pelo menos um produto.'; return; }
+    if (ehOrcamento && !(parseFloat(document.getElementById('novo-valor').value) > 0)) {
+        msg.style.color = 'red'; msg.innerText = 'Para gerar o orçamento, preencha o valor.'; return;
     }
 
     try {
@@ -812,6 +911,12 @@ function adicionarItemDP() {
         <button type="button" class="btn-small item-remover" title="Remover" onclick="this.closest('.item-pedido').remove(); atualizarTotalDP();">✕</button>
       </div>
       <small>Descrição</small><input type="text" class="item-descricao" placeholder="Ex: Bordado com nome e anjo">
+      <small>Códigos das linhas</small><input type="text" class="item-codigos" placeholder="Ex: 1143, 1000">
+      <div class="item-linha">
+        <div><small>Cor do artigo</small><input type="text" class="item-cor" placeholder="Ex: Preto"></div>
+        <div><small>Género</small><select class="item-genero"><option value="">—</option><option>Masculino</option><option>Feminino</option></select></div>
+      </div>
+      ${camposTamanhos()}
       <div class="item-linha">
         <div><small>Letra</small><input type="text" class="item-letra" placeholder="Ex: Cursiva, Arial"></div>
         <div><small>Local do bordado</small><input type="text" class="item-local" placeholder="Ex: Peito esquerdo, costas"></div>
@@ -836,6 +941,10 @@ function lerItensDP() {
         return {
             nome: div.querySelector('.item-nome').value.trim(),
             descricao: div.querySelector('.item-descricao').value.trim(),
+            codigos: div.querySelector('.item-codigos').value.trim(),
+            cor: div.querySelector('.item-cor').value.trim(),
+            genero: div.querySelector('.item-genero').value,
+            tamanhos: lerTamanhos(div),
             letra: div.querySelector('.item-letra').value.trim(),
             local: div.querySelector('.item-local').value.trim(),
             quantidade, preco, sem_iva: subtotal, iva: 0, com_iva: subtotal, _div: div
@@ -871,7 +980,7 @@ async function criarPedidoDP() {
     formData.append('descricao', descricao);
     formData.append('itens', JSON.stringify(itens));
     formData.append('origem_artigo', 'Cliente');
-    formData.append('codigos_linhas', document.getElementById('dp-linha').value);
+    formData.append('codigos_linhas', juntarCodigos(lerItensDP()));
     formData.append('valor', valor);
     formData.append('data_entrega', dataEntrega || '');
     formData.append('tipo_pagamento', 'Na Entrega');
@@ -884,7 +993,7 @@ async function criarPedidoDP() {
         const res = await api(`${URL_API}/pedidos`, { method: 'POST', body: formData });
         if (!res.ok) throw new Error('Falha ao guardar.');
 
-        ['dp-linha', 'dp-data-entrega', 'dp-imagem', 'dp-dst'].forEach(id => document.getElementById(id).value = '');
+        ['dp-data-entrega', 'dp-imagem', 'dp-dst'].forEach(id => document.getElementById(id).value = '');
         document.getElementById('lista-itens-dp').innerHTML = '';
         msg.innerText = '';
         fecharModalDP();
@@ -1026,6 +1135,8 @@ function abrirConfirmarPortal(id) {
             <div class="item-pedido">
               <strong>${escapar(i.quantidade)} × ${escapar(i.nome)}</strong>
               ${i.descricao ? `<br><small>${escapar(i.descricao)}</small>` : ''}
+              ${i.codigos ? `<br><small>Cor / código da linha: ${escapar(i.codigos)}</small>` : ''}
+              ${corTamanhos(i) ? `<br><small>${escapar(corTamanhos(i))}</small>` : ''}
               ${letraLocal(i) ? `<br><small>${escapar(letraLocal(i))}</small>` : ''}
             </div>`).join('') || `<p>${escapar(p.descricao)}</p>`}
         </div>
@@ -1124,13 +1235,20 @@ function abrirEditarPedido(id) {
           <label>Descrição</label>
           <input type="text" id="edit-descricao">
         </div>
-        <div class="input-group">
-          <label>Códigos das Linhas</label>
-          <input type="text" id="edit-linhas">
+        <div class="caixa-produtos">
+          <label style="display: block; font-weight: bold; margin-bottom: 10px; color: #4A2511;">Produtos / Serviços</label>
+          <div id="edit-lista-itens"></div>
+          <button type="button" class="btn-small" style="background: #A67B5B;" onclick="adicionarItemEdicao()">+ Adicionar produto</button>
+          <div class="totais-iva">
+            <div class="edit-so-iva"><span>Total sem IVA</span><strong id="edit-total-sem-iva">€ 0.00</strong></div>
+            <div class="edit-so-iva"><span>IVA (23%)</span><strong id="edit-total-iva">€ 0.00</strong></div>
+            <div class="total-final"><span id="edit-total-rotulo">Total com IVA</span><strong id="edit-total-com-iva">€ 0.00</strong></div>
+          </div>
         </div>
         <div class="input-group">
           <label>Valor (€)</label>
           <input type="number" step="0.01" id="edit-valor">
+          <small style="color: #666;">Ao alterar os produtos com preço, o valor passa a ser o total acima.</small>
         </div>
         <div class="input-group">
           <label>Data de entrega / previsão</label>
@@ -1160,8 +1278,16 @@ function abrirEditarPedido(id) {
     document.getElementById('edit-id-titulo').innerText = p.id;
     document.getElementById('edit-id').value = p.id;
     document.getElementById('edit-descricao').value = p.descricao || '';
-    document.getElementById('edit-linhas').value = p.codigos_linhas || '';
     document.getElementById('edit-valor').value = p.valor || '';
+    edicaoSemIva = ehPedidoDP(p);
+    document.querySelectorAll('.edit-so-iva').forEach(el => el.style.display = edicaoSemIva ? 'none' : '');
+    document.getElementById('edit-total-rotulo').innerText = edicaoSemIva ? 'Total' : 'Total com IVA';
+    document.getElementById('edit-lista-itens').innerHTML = '';
+    const itensAtuais = Array.isArray(p.itens) ? p.itens : [];
+    // Pedidos anteriores aos códigos por produto: os códigos gerais ficam no primeiro produto
+    const codigosGerais = itensAtuais.some(i => i.codigos) ? '' : p.codigos_linhas;
+    (itensAtuais.length ? itensAtuais : [{}]).forEach((item, n) =>
+        adicionarItemEdicao(n === 0 && codigosGerais ? { ...item, codigos: codigosGerais } : item, false));
     document.getElementById('edit-data-entrega').value = p.data_entrega || '';
     // Pedidos do portal: o cliente vê a nova data como previsão de entrega
     document.getElementById('edit-data-pretendida').innerText = p.data_pretendida
@@ -1173,6 +1299,96 @@ function abrirEditarPedido(id) {
     document.getElementById('edit-dst').value = '';
     document.getElementById('edit-imagem').value = '';
     modal.style.display = 'flex';
+}
+
+// Os pedidos DP não levam IVA, tal como no registo rápido
+let edicaoSemIva = false;
+
+// Ao abrir o modal (recalcularValor = false) o valor guardado não é tocado
+function adicionarItemEdicao(item = {}, recalcularValor = true) {
+    const div = document.createElement('div');
+    div.className = 'item-pedido';
+    div.itemOriginal = item;
+    const comLetraLocal = edicaoSemIva || item.letra || item.local;
+    div.innerHTML = `
+      <div class="item-linha">
+        <div><small>Nome do produto</small><input type="text" class="item-nome" placeholder="Ex: Toalha bordada"></div>
+        <button type="button" class="btn-small item-remover" title="Remover" onclick="this.closest('.item-pedido').remove(); atualizarTotaisEdicao();">✕</button>
+      </div>
+      <small>Descrição</small><input type="text" class="item-descricao" placeholder="Ex: Bordado com nome e anjo">
+      <small>Códigos das linhas</small><input type="text" class="item-codigos" placeholder="Ex: 1143, 1000">
+      <div class="item-linha">
+        <div><small>Cor do artigo</small><input type="text" class="item-cor" placeholder="Ex: Preto"></div>
+        <div><small>Género</small><select class="item-genero"><option value="">—</option><option>Masculino</option><option>Feminino</option></select></div>
+      </div>
+      ${camposTamanhos()}
+      ${comLetraLocal ? `
+      <div class="item-linha">
+        <div><small>Letra</small><input type="text" class="item-letra" placeholder="Ex: Cursiva, Arial"></div>
+        <div><small>Local do bordado</small><input type="text" class="item-local" placeholder="Ex: Peito esquerdo, costas"></div>
+      </div>` : ''}
+      <div class="item-linha">
+        <div><small>Qtd.</small><input type="number" class="item-qtd" min="1" step="1" value="1" oninput="atualizarTotaisEdicao()"></div>
+        <div><small>Preço unit.${edicaoSemIva ? '' : ' s/ IVA'} (€)</small><input type="number" class="item-preco" min="0" step="0.01" placeholder="0.00" oninput="atualizarTotaisEdicao()"></div>
+      </div>
+      <div class="item-calculo">
+        <span>${edicaoSemIva ? 'Subtotal' : 'Sem IVA'}: <strong class="item-sem-iva">€ 0.00</strong></span>
+        ${edicaoSemIva ? '' : `
+        <span>IVA 23%: <strong class="item-iva">€ 0.00</strong></span>
+        <span>Com IVA: <strong class="item-com-iva">€ 0.00</strong></span>`}
+      </div>`;
+    div.querySelector('.item-nome').value = item.nome || '';
+    div.querySelector('.item-descricao').value = item.descricao || '';
+    div.querySelector('.item-codigos').value = item.codigos || '';
+    div.querySelector('.item-cor').value = item.cor || '';
+    div.querySelector('.item-genero').value = item.genero || '';
+    preencherTamanhos(div, item.tamanhos);
+    if (comLetraLocal) {
+        div.querySelector('.item-letra').value = item.letra || '';
+        div.querySelector('.item-local').value = item.local || '';
+    }
+    if (item.quantidade) div.querySelector('.item-qtd').value = item.quantidade;
+    if (item.preco) div.querySelector('.item-preco').value = item.preco;
+    document.getElementById('edit-lista-itens').appendChild(div);
+    atualizarTotaisEdicao(recalcularValor);
+}
+
+function lerItensEdicao() {
+    return [...document.querySelectorAll('#edit-lista-itens .item-pedido')].map(div => {
+        const quantidade = Math.max(parseInt(div.querySelector('.item-qtd').value) || 1, 1);
+        const preco = parseFloat(div.querySelector('.item-preco').value) || 0;
+        const semIva = arred(quantidade * preco);
+        const iva = edicaoSemIva ? 0 : arred(semIva * TAXA_IVA);
+        const letra = div.querySelector('.item-letra');
+        const local = div.querySelector('.item-local');
+        return {
+            ...div.itemOriginal,
+            nome: div.querySelector('.item-nome').value.trim(),
+            descricao: div.querySelector('.item-descricao').value.trim(),
+            codigos: div.querySelector('.item-codigos').value.trim(),
+            cor: div.querySelector('.item-cor').value.trim(),
+            genero: div.querySelector('.item-genero').value,
+            tamanhos: lerTamanhos(div),
+            ...(letra && { letra: letra.value.trim(), local: local.value.trim() }),
+            quantidade, preco, sem_iva: semIva, iva, com_iva: arred(semIva + iva), _div: div
+        };
+    });
+}
+
+function atualizarTotaisEdicao(recalcularValor = true) {
+    const euro = n => `€ ${n.toFixed(2)}`;
+    const itens = lerItensEdicao();
+    itens.forEach(i => {
+        i._div.querySelector('.item-sem-iva').innerText = euro(i.sem_iva);
+        if (edicaoSemIva) return;
+        i._div.querySelector('.item-iva').innerText = euro(i.iva);
+        i._div.querySelector('.item-com-iva').innerText = euro(i.com_iva);
+    });
+    const t = totaisItens(itens);
+    document.getElementById('edit-total-sem-iva').innerText = euro(t.semIva);
+    document.getElementById('edit-total-iva').innerText = euro(t.iva);
+    document.getElementById('edit-total-com-iva').innerText = euro(t.comIva);
+    if (recalcularValor && itens.some(i => i.sem_iva > 0)) document.getElementById('edit-valor').value = t.comIva.toFixed(2);
 }
 
 // Links dos ficheiros que o pedido em edição mantém
@@ -1199,9 +1415,16 @@ async function guardarEdicaoPedido() {
     const msg = document.getElementById('msg-editar-pedido');
     const pAntigo = pedidosGlobais.find(item => item.id == id);
 
+    const itens = lerItensEdicao().filter(i => i.nome || i.sem_iva > 0).map(({ _div, ...i }) => i);
+    const nomes = lista => lista.map(i => i.nome).filter(Boolean).join(', ');
+    // A descrição gerada a partir dos produtos acompanha-os; uma escrita à mão mantém-se
+    const descricaoAtual = document.getElementById('edit-descricao').value.trim();
+    const descricaoAutomatica = !descricaoAtual || descricaoAtual === nomes(pAntigo.itens || []);
+
     const formData = new FormData();
-    formData.append('descricao', document.getElementById('edit-descricao').value);
-    formData.append('codigos_linhas', document.getElementById('edit-linhas').value);
+    formData.append('descricao', (descricaoAutomatica && nomes(itens)) || descricaoAtual);
+    formData.append('itens', JSON.stringify(itens));
+    formData.append('codigos_linhas', juntarCodigos(lerItensEdicao()));
     formData.append('valor', document.getElementById('edit-valor').value || 0);
     formData.append('data_entrega', document.getElementById('edit-data-entrega').value || '');
     formData.append('arquivo_dst', JSON.stringify(ficheirosEdicao.dst));
@@ -1213,7 +1436,6 @@ async function guardarEdicaoPedido() {
             formData.append(key, pAntigo[key] !== null ? pAntigo[key] : '');
         }
     }
-    if (Array.isArray(pAntigo.itens)) formData.append('itens', JSON.stringify(pAntigo.itens));
 
     const inputDst = document.getElementById('edit-dst');
     const inputImagem = document.getElementById('edit-imagem');
@@ -1641,7 +1863,7 @@ async function gerarPDF(id) {
             ...estiloTabela,
             head: [['PRODUTO / DESCRIÇÃO', 'QTD.', 'PREÇO S/ IVA', 'IVA 23%', 'TOTAL']],
             body: itens.map(i => [
-                [i.nome, i.descricao, letraLocal(i)].filter(Boolean).join('\n'),
+                [i.nome, i.descricao, corTamanhos(i), letraLocal(i)].filter(Boolean).join('\n'),
                 String(i.quantidade),
                 euro(i.preco),
                 euro(i.iva),

@@ -319,6 +319,40 @@ async function alterarSenha() {
 // --- Novo pedido ---
 // "Letra: X · Local: Y" de um produto (vazio se não tiver nenhum dos dois)
 const letraLocal = i => [i.letra && `Letra: ${i.letra}`, i.local && `Local: ${i.local}`].filter(Boolean).join(' · ');
+// "Cor: X · Masculino · Tamanhos: Y" de um produto (vazio se não tiver nenhum)
+const corTamanhos = i => [i.cor && `Cor: ${i.cor}`, i.genero, i.tamanhos && `Tamanhos: ${i.tamanhos}`].filter(Boolean).join(' · ');
+
+// --- Tamanhos do produto: uma quantidade por tamanho, guardadas como "3 S, 3 M, 1 XL" ---
+const TAMANHOS = ['Infantil', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'];
+
+const camposTamanhos = () => `
+      <small>Tamanhos (quantidade de cada)</small>
+      <div class="item-tamanhos">${TAMANHOS.map(t => `
+        <label><span>${t}</span><input type="number" min="0" step="1" placeholder="0" data-tamanho="${t}" oninput="somarTamanhos(this)"></label>`).join('')}
+      </div>`;
+
+const lerTamanhos = div => [...div.querySelectorAll('[data-tamanho]')]
+    .filter(input => parseInt(input.value) > 0)
+    .map(input => `${parseInt(input.value)} ${input.dataset.tamanho}`)
+    .join(', ');
+
+function preencherTamanhos(div, texto) {
+    (texto || '').split(', ').forEach(parte => {
+        const [quantidade, tamanho] = parte.split(' ');
+        const input = div.querySelector(`[data-tamanho="${tamanho}"]`);
+        if (input) input.value = quantidade;
+    });
+}
+
+// A quantidade do produto passa a ser a soma dos tamanhos
+function somarTamanhos(input) {
+    const div = input.closest('.item-pedido');
+    const total = [...div.querySelectorAll('[data-tamanho]')].reduce((s, i) => s + Math.max(parseInt(i.value) || 0, 0), 0);
+    if (!total) return;
+    const qtd = div.querySelector('.item-qtd');
+    qtd.value = total;
+    qtd.dispatchEvent(new Event('input'));
+}
 
 function adicionarItem() {
     const div = document.createElement('div');
@@ -329,6 +363,12 @@ function adicionarItem() {
         <button type="button" class="btn-small item-remover" title="Remover" onclick="this.closest('.item-pedido').remove()">✕</button>
       </div>
       <small>Descrição</small><input type="text" class="item-descricao" maxlength="500" placeholder="Ex: Tamanhos 2 M e 3 L, logótipo no peito">
+      <small>Cor / código da linha</small><input type="text" class="item-codigos" maxlength="300" placeholder="Ex: Dourado, 1143">
+      <div class="item-linha">
+        <div><small>Cor do artigo</small><input type="text" class="item-cor" maxlength="100" placeholder="Ex: Preto"></div>
+        <div><small>Género</small><select class="item-genero"><option value="">—</option><option>Masculino</option><option>Feminino</option></select></div>
+      </div>
+      ${camposTamanhos()}
       <div class="item-linha">
         <div><small>Letra</small><input type="text" class="item-letra" maxlength="100" placeholder="Ex: Cursiva, Arial"></div>
         <div><small>Local do bordado</small><input type="text" class="item-local" maxlength="150" placeholder="Ex: Peito esquerdo, costas"></div>
@@ -344,6 +384,10 @@ function lerItens() {
         .map(div => ({
             nome: div.querySelector('.item-nome').value.trim(),
             descricao: div.querySelector('.item-descricao').value.trim(),
+            codigos: div.querySelector('.item-codigos').value.trim(),
+            cor: div.querySelector('.item-cor').value.trim(),
+            genero: div.querySelector('.item-genero').value,
+            tamanhos: lerTamanhos(div),
             letra: div.querySelector('.item-letra').value.trim(),
             local: div.querySelector('.item-local').value.trim(),
             quantidade: parseInt(div.querySelector('.item-qtd').value) || 1
@@ -365,7 +409,7 @@ function validarFicheiros(input) {
 
 function limparFormulario() {
     document.getElementById('lista-itens-pedido').innerHTML = '';
-    ['cor-linha', 'data-pretendida', 'ficheiros'].forEach(id => document.getElementById(id).value = '');
+    ['data-pretendida', 'ficheiros'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('data-pretendida').min = new Date().toISOString().slice(0, 10);
     adicionarItem();
 }
@@ -381,7 +425,6 @@ async function enviarPedido() {
 
     const formData = new FormData();
     formData.append('itens', JSON.stringify(itens));
-    formData.append('cor_linha', document.getElementById('cor-linha').value);
     formData.append('data_pretendida', document.getElementById('data-pretendida').value);
     [...ficheiros.files].forEach(f => formData.append('ficheiro', f));
 
@@ -503,6 +546,40 @@ function limparFiltroDatas() {
 // Pedidos aprovados: confirmados pela Bordaveiro (em produção) ou prontos
 const ehAprovado = p => p.status === 'Pendente' || p.status === 'Concluído';
 
+// Pedidos com os detalhes abertos (mantêm-se abertos quando a lista é redesenhada)
+const pedidosAbertos = new Set();
+
+function alternarDetalhesPedido(evento, id) {
+    // Botões e links mantêm a sua função; selecionar texto também não abre nem fecha
+    if (evento.target.closest('button, a') || String(window.getSelection())) return;
+    if (pedidosAbertos.has(id)) pedidosAbertos.delete(id); else pedidosAbertos.add(id);
+    evento.currentTarget.classList.toggle('aberto');
+}
+
+function detalhesPedido(p) {
+    const itens = Array.isArray(p.itens) ? p.itens : [];
+    const imagens = lerUrls(p.arquivo_imagem);
+    const outros = lerUrls(p.arquivo_dst);
+    return `
+      <div class="pedido-detalhes">
+        <p><strong>Descrição:</strong> ${escapar(p.descricao)}</p>
+        ${itens.map(i => `
+          <div class="detalhe-produto">
+            <div class="detalhe-produto-linha"><strong>${escapar(i.quantidade)} × ${escapar(i.nome)}</strong></div>
+            ${i.descricao ? `<small>${escapar(i.descricao)}</small>` : ''}
+            ${i.codigos ? `<small>Cor / código da linha: ${escapar(i.codigos)}</small>` : ''}
+            ${corTamanhos(i) ? `<small>${escapar(corTamanhos(i))}</small>` : ''}
+            ${letraLocal(i) ? `<small>${escapar(letraLocal(i))}</small>` : ''}
+          </div>`).join('')}
+        ${p.cor_linha ? `<p><strong>Cor da linha:</strong> ${escapar(p.cor_linha)}</p>` : ''}
+        ${p.data_pretendida ? `<p><strong>Data pretendida:</strong> ${formatarData(p.data_pretendida)}</p>` : ''}
+        ${imagens.length ? `<div class="thumbs-pedido" style="margin-top: 8px;">${imagens.map(url =>
+            `<a href="${escapar(url)}" target="_blank"><img class="thumb-pedido" style="width: 56px; height: 56px;" src="${escapar(url)}" alt="" loading="lazy"></a>`).join('')}</div>` : ''}
+        ${outros.length ? `<div class="portal-ficheiros">${outros.map(url =>
+            `<a href="${escapar(url)}" target="_blank" title="${escapar(nomeFicheiro(url))}">${escapar(tipoFicheiro(url))} · ${escapar(nomeFicheiro(url))}</a>`).join('')}</div>` : ''}
+      </div>`;
+}
+
 function renderizarPedidos() {
     const div = document.getElementById('lista-pedidos');
     const filtrado = !!(document.getElementById('filtro-de').value || document.getElementById('filtro-ate').value);
@@ -520,25 +597,19 @@ function renderizarPedidos() {
             const estado = estadoCliente(p);
             const itens = Array.isArray(p.itens) && p.itens.length
                 ? `<ul class="portal-itens">${p.itens.map(i =>
-                    `<li>${escapar(i.quantidade)} × <strong>${escapar(i.nome)}</strong>${i.descricao ? ` — ${escapar(i.descricao)}` : ''}` +
-                    `${letraLocal(i) ? `<br><small>${escapar(letraLocal(i))}</small>` : ''}</li>`).join('')}</ul>`
+                    `<li>${escapar(i.quantidade)} × <strong>${escapar(i.nome)}</strong></li>`).join('')}</ul>`
                 : `<p style="margin: 6px 0;">${escapar(p.descricao)}</p>`;
-            const imagens = lerUrls(p.arquivo_imagem);
-            const outros = lerUrls(p.arquivo_dst);
             return `
-          <div class="portal-pedido" style="border-left-color: ${estado.cor};">
+          <div class="portal-pedido cartao-pedido${pedidosAbertos.has(p.id) ? ' aberto' : ''}" onclick="alternarDetalhesPedido(event, ${p.id})" style="border-left-color: ${estado.cor};">
             <div style="display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center;">
               <strong style="color: #4A2511;">Pedido nº ${p.id}</strong>
               <span class="portal-estado" style="background: ${estado.cor};">${estado.texto}</span>
             </div>
             ${itens}
-            ${p.cor_linha ? `<div><small>Cor da linha:</small> ${escapar(p.cor_linha)}</div>` : ''}
             <div style="margin-top: 4px;">${linhaEntrega(p)}</div>
             ${avisoCancelar(p)}
-            ${imagens.length ? `<div class="thumbs-pedido" style="margin-top: 8px;">${imagens.map(url =>
-                `<a href="${escapar(url)}" target="_blank"><img class="thumb-pedido" style="width: 56px; height: 56px;" src="${escapar(url)}" alt="" loading="lazy"></a>`).join('')}</div>` : ''}
-            ${outros.length ? `<div class="portal-ficheiros">${outros.map(url =>
-                `<a href="${escapar(url)}" target="_blank" title="${escapar(nomeFicheiro(url))}">${escapar(tipoFicheiro(url))} · ${escapar(nomeFicheiro(url))}</a>`).join('')}</div>` : ''}
+            <div class="pedido-ver-detalhes"></div>
+            ${detalhesPedido(p)}
             <small style="color: #999;">Data de entrada: ${formatarData(p.data_pedido)}</small>
           </div>`;
         }).join('');
@@ -562,14 +633,17 @@ function exportarRelatorio() {
         ? `Período (data de entrada): ${de ? formatarData(de) : 'início'} a ${ate ? formatarData(ate) : 'hoje'}`
         : 'Período: todos os pedidos';
     const produtos = p => Array.isArray(p.itens) && p.itens.length
-        ? p.itens.map(i => `${i.quantidade} × ${i.nome}${i.descricao ? ` (${i.descricao})` : ''}${letraLocal(i) ? ` [${letraLocal(i)}]` : ''}`).join('; ')
+        ? p.itens.map(i => `${i.quantidade} × ${i.nome}${i.descricao ? ` (${i.descricao})` : ''}${corTamanhos(i) ? ` [${corTamanhos(i)}]` : ''}${letraLocal(i) ? ` [${letraLocal(i)}]` : ''}`).join('; ')
         : p.descricao || '';
 
-    const cabecalho = ['Pedido nº', 'Produtos', 'Cor da linha', 'Data de entrada', 'Data pretendida', 'Data de entrega', 'Estado'];
+    // Os pedidos antigos têm uma só cor; os novos têm-na em cada produto
+    const corLinha = p => p.cor_linha || (Array.isArray(p.itens) ? p.itens : []).map(i => i.codigos).filter(Boolean).join('; ');
+
+    const cabecalho = ['Pedido nº', 'Produtos', 'Cor / código da linha', 'Data de entrada', 'Data pretendida', 'Data de entrega', 'Estado'];
     const linhas = aprovados.map(p => [
         p.id,
         produtos(p),
-        p.cor_linha || '',
+        corLinha(p),
         formatarData(p.data_pedido),
         formatarData(p.data_pretendida),
         formatarData(p.data_entrega),
