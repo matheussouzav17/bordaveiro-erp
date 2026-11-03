@@ -119,6 +119,12 @@ function mostrarDashboard() {
 
     mudarPagina('pedidos');
     carregarClientes();
+    // Os clientes fazem e cancelam pedidos no portal: volta a carregar a cada minuto
+    // (mesmo noutro separador, para o sinal tocar) e ao regressar a este separador
+    setInterval(carregarPedidos, 60 * 1000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) carregarPedidos(); });
+    // O browser só deixa tocar som depois de interagir com a página
+    ['pointerdown', 'keydown'].forEach(evento => document.addEventListener(evento, prepararSom));
 }
 
 function terminarSessao() {
@@ -439,7 +445,83 @@ function mudarAba(aba) {
 async function carregarPedidos() {
     const resposta = await api(`${URL_API}/pedidos`);
     pedidosGlobais = await resposta.json();
+    avisarPedidosPortal(pedidosGlobais);
     renderizarPedidos();
+}
+
+// --- Aviso de pedidos novos e cancelamentos feitos no portal ---
+// O último estado visto de cada pedido fica guardado, para avisar também
+// do que aconteceu enquanto o painel esteve fechado
+const CHAVE_ESTADOS = 'estados_painel';
+const DURACAO_AVISO = 30 * 1000;
+const estadosVistos = lerEstadosVistos();
+let contextoAudio = null;
+let somPendente = false;
+
+function lerEstadosVistos() {
+    try { return JSON.parse(localStorage.getItem(CHAVE_ESTADOS)) || {}; } catch (e) { return {}; }
+}
+
+function avisarPedidosPortal(pedidos) {
+    if (!Array.isArray(pedidos)) return;
+    // Pedido do portal ainda não visto, ou pedido que passou a cancelado pelo cliente
+    const novos = pedidos.filter(p => p.status === ESTADO_PORTAL && estadosVistos[p.id] !== ESTADO_PORTAL);
+    const cancelados = pedidos.filter(p => p.status === ESTADO_CANCELADO && estadosVistos[p.id] && estadosVistos[p.id] !== ESTADO_CANCELADO);
+    pedidos.forEach(p => estadosVistos[p.id] = p.status);
+    // O localStorage é limpo ao terminar sessão; sem estados guardados não há nada a perder
+    try { localStorage.setItem(CHAVE_ESTADOS, JSON.stringify(estadosVistos)); } catch (e) { /* só perde o aviso com o painel fechado */ }
+
+    if (!novos.length && !cancelados.length) return;
+    const nome = p => p.clientes ? p.clientes.nome : 'Cliente';
+    // Muitos de uma vez (por exemplo, no primeiro acesso) ficam num só aviso
+    if (novos.length > 3) mostrarAvisoPainel(`${novos.length} pedidos do portal`, 'Aguardam confirmação.', '#2980b9');
+    else novos.forEach(p => mostrarAvisoPainel(`Novo pedido nº ${p.id}`, `${escapar(nome(p))} fez um pedido pelo portal.`, '#2980b9'));
+    cancelados.forEach(p => mostrarAvisoPainel(`Pedido nº ${p.id} cancelado`, `${escapar(nome(p))} cancelou o pedido no portal.`, '#c0392b'));
+    tocarSinal();
+}
+
+// Clicar no aviso abre a aba Portal
+function mostrarAvisoPainel(titulo, texto, cor) {
+    const aviso = document.createElement('div');
+    aviso.className = 'portal-toast';
+    aviso.style.borderLeftColor = cor;
+    aviso.style.cursor = 'pointer';
+    aviso.innerHTML = `
+      <div><strong>${titulo}</strong><br>${texto}</div>
+      <button type="button" title="Fechar">✕</button>`;
+    aviso.onclick = evento => {
+        aviso.remove();
+        if (evento.target.closest('button')) return;
+        mudarPagina('pedidos');
+        mudarAba('portal');
+    };
+    document.getElementById('avisos-estado').appendChild(aviso);
+    setTimeout(() => aviso.remove(), DURACAO_AVISO);
+}
+
+async function prepararSom() {
+    try {
+        contextoAudio ??= new AudioContext();
+        await contextoAudio.resume();
+        if (somPendente) tocarSinal();
+    } catch (e) { /* sem som, o aviso no ecrã continua visível */ }
+}
+
+// Duas notas curtas; se o browser ainda não permitir som, toca na próxima interação
+function tocarSinal() {
+    if (contextoAudio?.state !== 'running') { somPendente = true; return; }
+    somPendente = false;
+    [[880, 0], [1175, 0.18]].forEach(([frequencia, atraso]) => {
+        const inicio = contextoAudio.currentTime + atraso;
+        const nota = contextoAudio.createOscillator();
+        const volume = contextoAudio.createGain();
+        nota.frequency.value = frequencia;
+        volume.gain.setValueAtTime(0.25, inicio);
+        volume.gain.exponentialRampToValueAtTime(0.001, inicio + 0.3);
+        nota.connect(volume).connect(contextoAudio.destination);
+        nota.start(inicio);
+        nota.stop(inicio + 0.3);
+    });
 }
 
 function renderizarPedidos() {
@@ -617,6 +699,45 @@ const letraLocal = i => [i.letra && `Letra: ${i.letra}`, i.local && `Local: ${i.
 // "Cor: X · Masculino · Tamanhos: Y" de um produto (vazio se não tiver nenhum)
 const corTamanhos = i => [i.cor && `Cor: ${i.cor}`, i.genero, i.tamanhos && `Tamanhos: ${i.tamanhos}`].filter(Boolean).join(' · ');
 
+// --- Modo de IVA de cada produto ---
+// 'acrescentar': o preço digitado é sem IVA e soma-se 23%
+// 'incluido': o preço digitado já tem IVA e o sistema retira-o
+// 'sem': o produto não leva IVA
+// Em todos os modos o campo preco guarda o preço unitário sem IVA
+const camposPrecoIva = (aoMudar, modo) => `
+      <div class="item-linha">
+        <div><small>Qtd.</small><input type="number" class="item-qtd" min="1" step="1" value="1" oninput="${aoMudar}"></div>
+        <div><small class="item-rotulo-preco">${rotuloPreco(modo)}</small><input type="number" class="item-preco" min="0" step="0.01" placeholder="0.00" oninput="${aoMudar}"></div>
+      </div>
+      <small>IVA</small>
+      <select class="item-modo-iva" onchange="this.closest('.item-pedido').querySelector('.item-rotulo-preco').innerText = rotuloPreco(this.value); ${aoMudar}">
+        <option value="acrescentar">Acrescentar IVA 23% ao preço</option>
+        <option value="incluido">Preço já com IVA (retirar o IVA)</option>
+        <option value="sem">Sem IVA</option>
+      </select>`;
+
+const rotuloPreco = modo => ({ incluido: 'Preço unit. c/ IVA (€)', sem: 'Preço unit. (€)' }[modo] || 'Preço unit. s/ IVA (€)');
+
+function calcularItemIva(quantidade, precoDigitado, modo) {
+    if (modo === 'incluido') {
+        const comIva = arred(quantidade * precoDigitado);
+        const semIva = arred(comIva / (1 + TAXA_IVA));
+        return { modo_iva: modo, preco_com_iva: precoDigitado, preco: arred(precoDigitado / (1 + TAXA_IVA)), sem_iva: semIva, iva: arred(comIva - semIva), com_iva: comIva };
+    }
+    const semIva = arred(quantidade * precoDigitado);
+    const iva = modo === 'sem' ? 0 : arred(semIva * TAXA_IVA);
+    return { modo_iva: modo, preco: precoDigitado, sem_iva: semIva, iva, com_iva: arred(semIva + iva) };
+}
+
+// Preenche o preço e o modo de IVA de um produto guardado
+function preencherPrecoIva(div, item) {
+    const modo = item.modo_iva || 'acrescentar';
+    div.querySelector('.item-modo-iva').value = modo;
+    div.querySelector('.item-rotulo-preco').innerText = rotuloPreco(modo);
+    const preco = modo === 'incluido' ? item.preco_com_iva : item.preco;
+    if (preco) div.querySelector('.item-preco').value = preco;
+}
+
 // --- Tamanhos do produto: uma quantidade por tamanho, guardadas como "3 S, 3 M, 1 XL" ---
 const TAMANHOS = ['Infantil', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4XL', '5XL'];
 
@@ -666,10 +787,7 @@ function adicionarItemPedido(item = {}) {
         <div><small>Género</small><select class="item-genero"><option value="">—</option><option>Masculino</option><option>Feminino</option></select></div>
       </div>
       ${camposTamanhos()}
-      <div class="item-linha">
-        <div><small>Qtd.</small><input type="number" class="item-qtd" min="1" step="1" value="1" oninput="atualizarTotaisIva()"></div>
-        <div><small>Preço unit. s/ IVA (€)</small><input type="number" class="item-preco" min="0" step="0.01" placeholder="0.00" oninput="atualizarTotaisIva()"></div>
-      </div>
+      ${camposPrecoIva('atualizarTotaisIva()')}
       <div class="item-calculo">
         <span>Sem IVA: <strong class="item-sem-iva">€ 0.00</strong></span>
         <span>IVA 23%: <strong class="item-iva">€ 0.00</strong></span>
@@ -682,7 +800,7 @@ function adicionarItemPedido(item = {}) {
     div.querySelector('.item-genero').value = item.genero || '';
     preencherTamanhos(div, item.tamanhos);
     if (item.quantidade) div.querySelector('.item-qtd').value = item.quantidade;
-    if (item.preco) div.querySelector('.item-preco').value = item.preco;
+    preencherPrecoIva(div, item);
     document.getElementById('lista-itens-pedido').appendChild(div);
     atualizarTotaisIva();
 }
@@ -692,8 +810,7 @@ function lerItensPedido() {
     return [...document.querySelectorAll('#lista-itens-pedido .item-pedido')].map(div => {
         const quantidade = parseInt(div.querySelector('.item-qtd').value) || 1;
         const preco = parseFloat(div.querySelector('.item-preco').value) || 0;
-        const semIva = arred(quantidade * preco);
-        const iva = arred(semIva * TAXA_IVA);
+        const valores = calcularItemIva(quantidade, preco, div.querySelector('.item-modo-iva').value);
         return {
             nome: div.querySelector('.item-nome').value.trim(),
             descricao: div.querySelector('.item-descricao').value.trim(),
@@ -701,7 +818,7 @@ function lerItensPedido() {
             cor: div.querySelector('.item-cor').value.trim(),
             genero: div.querySelector('.item-genero').value,
             tamanhos: lerTamanhos(div),
-            quantidade, preco, sem_iva: semIva, iva, com_iva: arred(semIva + iva), _div: div
+            quantidade, ...valores, _div: div
         };
     });
 }
@@ -1328,10 +1445,11 @@ function adicionarItemEdicao(item = {}, recalcularValor = true) {
         <div><small>Letra</small><input type="text" class="item-letra" placeholder="Ex: Cursiva, Arial"></div>
         <div><small>Local do bordado</small><input type="text" class="item-local" placeholder="Ex: Peito esquerdo, costas"></div>
       </div>` : ''}
+      ${edicaoSemIva ? `
       <div class="item-linha">
         <div><small>Qtd.</small><input type="number" class="item-qtd" min="1" step="1" value="1" oninput="atualizarTotaisEdicao()"></div>
-        <div><small>Preço unit.${edicaoSemIva ? '' : ' s/ IVA'} (€)</small><input type="number" class="item-preco" min="0" step="0.01" placeholder="0.00" oninput="atualizarTotaisEdicao()"></div>
-      </div>
+        <div><small>Preço unit. (€)</small><input type="number" class="item-preco" min="0" step="0.01" placeholder="0.00" oninput="atualizarTotaisEdicao()"></div>
+      </div>` : camposPrecoIva('atualizarTotaisEdicao()')}
       <div class="item-calculo">
         <span>${edicaoSemIva ? 'Subtotal' : 'Sem IVA'}: <strong class="item-sem-iva">€ 0.00</strong></span>
         ${edicaoSemIva ? '' : `
@@ -1349,7 +1467,8 @@ function adicionarItemEdicao(item = {}, recalcularValor = true) {
         div.querySelector('.item-local').value = item.local || '';
     }
     if (item.quantidade) div.querySelector('.item-qtd').value = item.quantidade;
-    if (item.preco) div.querySelector('.item-preco').value = item.preco;
+    if (edicaoSemIva) { if (item.preco) div.querySelector('.item-preco').value = item.preco; }
+    else preencherPrecoIva(div, item);
     document.getElementById('edit-lista-itens').appendChild(div);
     atualizarTotaisEdicao(recalcularValor);
 }
@@ -1358,8 +1477,10 @@ function lerItensEdicao() {
     return [...document.querySelectorAll('#edit-lista-itens .item-pedido')].map(div => {
         const quantidade = Math.max(parseInt(div.querySelector('.item-qtd').value) || 1, 1);
         const preco = parseFloat(div.querySelector('.item-preco').value) || 0;
-        const semIva = arred(quantidade * preco);
-        const iva = edicaoSemIva ? 0 : arred(semIva * TAXA_IVA);
+        const modo = div.querySelector('.item-modo-iva');
+        const valores = edicaoSemIva
+            ? { preco, sem_iva: arred(quantidade * preco), iva: 0, com_iva: arred(quantidade * preco) }
+            : calcularItemIva(quantidade, preco, modo.value);
         const letra = div.querySelector('.item-letra');
         const local = div.querySelector('.item-local');
         return {
@@ -1371,7 +1492,7 @@ function lerItensEdicao() {
             genero: div.querySelector('.item-genero').value,
             tamanhos: lerTamanhos(div),
             ...(letra && { letra: letra.value.trim(), local: local.value.trim() }),
-            quantidade, preco, sem_iva: semIva, iva, com_iva: arred(semIva + iva), _div: div
+            quantidade, ...valores, _div: div
         };
     });
 }
