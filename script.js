@@ -1786,6 +1786,11 @@ async function gerarPDF(id) {
     const telefone = p.clientes && p.clientes.telefone ? p.clientes.telefone : '-';
     const dataDoc = p.data_pedido ? formatarData(p.data_pedido.slice(0, 10)) : new Date().toLocaleDateString('pt-PT');
     const dataEntrega = p.data_entrega ? formatarData(p.data_entrega) : 'a combinar';
+    // prazo em dias corridos entre a data do pedido e a data de entrega definida
+    const diasPrazo = p.data_entrega && p.data_pedido
+        ? Math.round((Date.parse(p.data_entrega.slice(0, 10)) - Date.parse(p.data_pedido.slice(0, 10))) / 86400000)
+        : null;
+    const textoPrazo = diasPrazo > 0 ? ` (${diasPrazo} ${diasPrazo === 1 ? 'dia' : 'dias'})` : '';
     const qtd = parseInt(p.quantidade_artigo) || 1;
     const valorTotal = parseFloat(p.valor) || 0;
     const origem = p.origem_artigo === 'Bordaveiro'
@@ -1952,7 +1957,7 @@ async function gerarPDF(id) {
     // estilo: 'n' normal, 'v' vermelho normal, 'vb' vermelho negrito
     const secoes = [
         ['1. Prazos e Validade', [
-            ['n', `Prazo de Execução e Entrega estimado: ${dataEntrega} (Até 10 dias úteis).`],
+            ['n', `Prazo de Execução e Entrega estimado: ${dataEntrega}${textoPrazo}.`],
             ['vb', 'ORÇAMENTO VÁLIDO POR 15 DIAS.'],
             ['n', 'Para outras quantidades ou execução parcial, favor solicitar novo orçamento.']
         ]],
