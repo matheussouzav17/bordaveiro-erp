@@ -596,8 +596,11 @@ async function carregarPedidos() {
 function pedidosDoPeriodo() {
     const de = document.getElementById('filtro-de').value;
     const ate = document.getElementById('filtro-ate').value;
+    const fat = document.getElementById('filtro-faturacao').value;
     return pedidosPortal.filter(p => {
         const entrada = (p.data_pedido || '').slice(0, 10);
+        if (fat === 'faturado' && !p.faturado) return false;
+        if (fat === 'a-faturar' && (p.faturado || p.status === 'Cancelado')) return false;
         return (!de || entrada >= de) && (!ate || entrada <= ate);
     });
 }
@@ -605,6 +608,7 @@ function pedidosDoPeriodo() {
 function limparFiltroDatas() {
     document.getElementById('filtro-de').value = '';
     document.getElementById('filtro-ate').value = '';
+    document.getElementById('filtro-faturacao').value = '';
     renderizarPedidos();
 }
 
@@ -647,7 +651,7 @@ function detalhesPedido(p) {
 
 function renderizarPedidos() {
     const div = document.getElementById('lista-pedidos');
-    const filtrado = !!(document.getElementById('filtro-de').value || document.getElementById('filtro-ate').value);
+    const filtrado = !!(document.getElementById('filtro-de').value || document.getElementById('filtro-ate').value || document.getElementById('filtro-faturacao').value);
     const pedidos = pedidosDoPeriodo();
     document.getElementById('resumo-filtro').innerText = filtrado
         ? `${pedidos.length} pedido(s) no período, ${pedidos.filter(ehAprovado).length} aprovado(s).`
@@ -668,7 +672,10 @@ function renderizarPedidos() {
           <div class="portal-pedido cartao-pedido${pedidosAbertos.has(p.id) ? ' aberto' : ''}" onclick="alternarDetalhesPedido(event, ${p.id})" style="border-left-color: ${estado.cor};">
             <div style="display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center;">
               <strong style="color: #4A2511;">Pedido nº ${p.id}</strong>
-              <span class="portal-estado" style="background: ${estado.cor};">${estado.texto}</span>
+              <span>
+                ${ehAprovado(p) ? `<span class="portal-estado" style="background: ${p.faturado ? '#2980b9' : '#95a5a6'};">${p.faturado ? 'Faturado' : 'A faturar'}</span>` : ''}
+                <span class="portal-estado" style="background: ${estado.cor};">${estado.texto}</span>
+              </span>
             </div>
             ${itens}
             <div style="margin-top: 4px;">${linhaEntrega(p)}</div>
@@ -681,8 +688,8 @@ function renderizarPedidos() {
 }
 
 // Relatório em Excel dos pedidos aprovados do período (sem valores)
-function exportarRelatorio() {
-    if (typeof XLSX === 'undefined') {
+async function exportarRelatorio() {
+    if (typeof ExcelJS === 'undefined') {
         alert('Não foi possível carregar a biblioteca de Excel. Verifique a ligação à internet.');
         return;
     }
@@ -697,14 +704,16 @@ function exportarRelatorio() {
     const periodo = (de || ate)
         ? `Período (data de entrada): ${de ? formatarData(de) : 'início'} a ${ate ? formatarData(ate) : 'hoje'}`
         : 'Período: todos os pedidos';
+    // Só a quantidade e o nome de cada produto, um por linha
     const produtos = p => Array.isArray(p.itens) && p.itens.length
-        ? p.itens.map(i => `${i.quantidade} × ${i.nome}${i.descricao ? ` (${i.descricao})` : ''}${corTamanhos(i) ? ` [${corTamanhos(i)}]` : ''}${letraLocal(i) ? ` [${letraLocal(i)}]` : ''}`).join('; ')
+        ? p.itens.map(i => `${i.quantidade} × ${i.nome}`).join('\n')
         : p.descricao || '';
 
     // Os pedidos antigos têm uma só cor; os novos têm-na em cada produto
     const corLinha = p => p.cor_linha || (Array.isArray(p.itens) ? p.itens : []).map(i => i.codigos).filter(Boolean).join('; ');
 
-    const cabecalho = ['Pedido nº', 'Produtos', 'Cor / código da linha', 'Data de entrada', 'Data pretendida', 'Data de entrega', 'Estado'];
+    const cabecalho = ['Pedido nº', 'Produtos', 'Cor / código da linha', 'Data de entrada', 'Data pretendida', 'Data de entrega', 'Estado', 'Faturação'];
+    const larguras = [11, 45, 22, 16, 16, 16, 26, 14];
     const linhas = aprovados.map(p => [
         p.id,
         produtos(p),
@@ -712,23 +721,16 @@ function exportarRelatorio() {
         formatarData(p.data_pedido),
         formatarData(p.data_pretendida),
         formatarData(p.data_entrega),
-        estadoCliente(p).texto
+        estadoCliente(p).texto,
+        p.faturado ? 'Faturado' : 'A faturar'
     ]);
 
-    const folha = XLSX.utils.aoa_to_sheet([
-        [`BORDAVEIRO - Pedidos aprovados - ${localStorage.getItem(CHAVE_NOME) || ''}`],
-        [periodo],
-        [`Gerado em ${new Date().toLocaleDateString('pt-PT')}`],
-        [],
-        cabecalho,
-        ...linhas,
-        [],
-        [`Total: ${linhas.length} pedido(s)`]
-    ]);
-    folha['!cols'] = [{ wch: 10 }, { wch: 50 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 26 }];
-
-    const livro = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(livro, folha, 'Pedidos aprovados');
-    const sufixo = de || ate ? `_${de || 'inicio'}_a_${ate || 'hoje'}` : '';
-    XLSX.writeFile(livro, `Bordaveiro_Pedidos_Aprovados${sufixo}.xlsx`);
+    const sufixo = de || ate ? `_${de || "inicio"}_a_${ate || "hoje"}` : "";
+    await gerarExcelBordaveiro({
+        titulo: `Pedidos aprovados - ${localStorage.getItem(CHAVE_NOME) || ""}`,
+        periodo, cabecalho, linhas, larguras,
+        colunasEsquerda: [1],
+        rodape: `Total: ${linhas.length} pedido(s)`,
+        ficheiro: `Bordaveiro_Pedidos_Aprovados${sufixo}.xlsx`
+    });
 }

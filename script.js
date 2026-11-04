@@ -556,7 +556,9 @@ function renderizarPedidos() {
                 if (dataAte && p.data_entrega > dataAte) bateData = false;
             }
         }
-        return naAba && bateTexto && bateData;
+        const filtroFat = document.getElementById('filtro-faturacao').value;
+        const bateFat = !filtroFat || (filtroFat === 'faturado' ? !!p.faturado : !p.faturado);
+        return naAba && bateTexto && bateData && bateFat;
     });
 
     if (filtrados.length === 0) {
@@ -588,6 +590,12 @@ function renderizarPedidos() {
             btnWhatsApp = `<button class="btn-small" style="background:#25D366;" onclick="window.open(this.dataset.link, '_blank')" data-link="${escapar(link)}">Notificar cliente</button>`;
         }
 
+        const btnFaturado = (ehOrcamento || doPortal || cancelado)
+            ? ''
+            : p.faturado
+            ? `<button class="btn-small" style="background:#7f8c8d;" onclick="mudarFaturado(${p.id}, false)" title="Voltar a marcar como por faturar">Desfazer faturado</button>`
+            : `<button class="btn-small" style="background:#2980b9;" onclick="mudarFaturado(${p.id}, true)">Faturado</button>`;
+
         const btnEditar = `<button class="btn-small" style="background:#f39c12;" onclick="abrirEditarPedido(${p.id})">Editar</button>`;
 
         const [urlPdf] = lerUrls(p.arquivo_pdf);
@@ -611,7 +619,7 @@ function renderizarPedidos() {
         painel.innerHTML += `
       <div class="cartao-pedido${pedidosAbertos.has(p.id) ? ' aberto' : ''}" onclick="alternarDetalhesPedido(event, ${p.id})" style="border-left: 5px solid ${corBorda}; background: white; padding: 15px; margin-bottom: 12px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
         <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom: 8px; gap: 10px; flex-wrap: wrap;">
-          <strong style="font-size: 15px; color: #4A2511;">#${p.id} - ${escapar(p.descricao)}${ehOrcamento ? ' <span style="font-size:11px; background:#E5A83B; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ORÇAMENTO</span>' : ''}${doPortal ? ' <span class="badge-portal">PORTAL</span>' : ''}${cancelado ? ' <span class="badge-cancelado">CANCELADO PELO CLIENTE</span>' : ''}</strong>
+          <strong style="font-size: 15px; color: #4A2511;">#${p.id} - ${escapar(p.descricao)}${ehOrcamento ? ' <span style="font-size:11px; background:#E5A83B; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ORÇAMENTO</span>' : ''}${doPortal ? ' <span class="badge-portal">PORTAL</span>' : ''}${cancelado ? ' <span class="badge-cancelado">CANCELADO PELO CLIENTE</span>' : ''}${p.faturado && !ehOrcamento && !doPortal && !cancelado ? ' <span style="font-size:11px; background:#2980b9; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">FATURADO</span>' : ''}</strong>
           <div style="display:flex; gap:6px; flex-wrap: wrap;">${botaoDst}${urlPdf ? `<a href="${escapar(urlPdf)}" target="_blank" class="btn-small" style="background:#c0392b;">PDF guardado</a>` : ''}<button class="btn-small" style="background:#A67B5B;" onclick="gerarPDF(${p.id})">Gerar PDF</button></div>
         </div>
         <div class="pedido-corpo${urlsImagem.length > 1 ? ' varias-imagens' : ''}">
@@ -630,7 +638,7 @@ function renderizarPedidos() {
         <div class="pedido-ver-detalhes"></div>
         ${detalhesPedido(p)}
         <div style="display:flex; gap:10px; margin-top:12px; flex-wrap: wrap;">
-          ${btnConcluir} ${btnWhatsApp} ${btnEditar}
+          ${btnConcluir} ${btnFaturado} ${btnWhatsApp} ${btnEditar}
           <button class="btn-small" style="background:#e74c3c;" onclick="apagarPedido(${p.id})">Eliminar</button>
         </div>
       </div>`;
@@ -688,6 +696,7 @@ function detalhesPedido(p) {
 function limparFiltroCalendarioPedidos() {
     document.getElementById('filtro-data-de').value = '';
     document.getElementById('filtro-data-ate').value = '';
+    document.getElementById('filtro-faturacao').value = '';
     renderizarPedidos();
 }
 
@@ -1003,6 +1012,20 @@ async function mudarStatus(id, novoStatus) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: novoStatus })
     });
+    carregarPedidos();
+}
+
+async function mudarFaturado(id, faturado) {
+    try {
+        const res = await api(`${URL_API}/pedidos/${id}/faturado`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ faturado })
+        });
+        if (!res.ok) throw new Error();
+    } catch (e) {
+        alert('Não foi possível atualizar a faturação. Confirme que a coluna "faturado" existe na base de dados.');
+    }
     carregarPedidos();
 }
 
@@ -1656,8 +1679,11 @@ async function apagarEstoque(id) {
 function pedidosDoPeriodo() {
     const inicio = document.getElementById('stat-data-inicio').value;
     const fim = document.getElementById('stat-data-fim').value;
+    const fat = document.getElementById('stat-faturacao').value;
     return pedidosGlobais.filter(p => {
         if (['Orçamento', ESTADO_PORTAL, ESTADO_CANCELADO].includes(p.status)) return false;
+        if (fat === 'faturado' && !p.faturado) return false;
+        if (fat === 'a-faturar' && p.faturado) return false;
         if (!inicio && !fim) return true;
         if (!p.data_entrega) return false;
         if (inicio && p.data_entrega < inicio) return false;
@@ -1743,8 +1769,8 @@ function formatarData(iso) {
     return `${d[2]}/${d[1]}/${d[0]}`;
 }
 
-function exportarRelatorio(tipo) {
-    if (typeof XLSX === 'undefined') {
+async function exportarRelatorio(tipo) {
+    if (typeof ExcelJS === 'undefined') {
         alert('Não foi possível carregar a biblioteca de Excel. Verifique a ligação à internet.');
         return;
     }
@@ -1795,6 +1821,12 @@ function exportarRelatorio(tipo) {
         totais = ['', '', '', '', 'TOTAL', linhas.reduce((t, l) => t + l[5], 0)];
     }
 
+    // Coluna de faturação em todos os relatórios (a 1.ª coluna de cada linha é o nº do pedido)
+    const faturadoPorId = new Map(lista.map(p => [p.id, p.faturado]));
+    cabecalho.push('Faturação');
+    linhas.forEach(l => l.push(faturadoPorId.get(l[0]) ? 'Faturado' : 'A faturar'));
+    totais.push('');
+
     if (linhas.length === 0) {
         alert('Não existem dados para este relatório no período selecionado.');
         return;
@@ -1804,27 +1836,19 @@ function exportarRelatorio(tipo) {
         ? `Período: ${inicio ? formatarData(inicio) : 'início'} a ${fim ? formatarData(fim) : 'hoje'}`
         : 'Período: todos os pedidos';
 
-    const folha = XLSX.utils.aoa_to_sheet([
-        ['BORDAVEIRO - ' + titulo],
-        [periodo],
-        [`Gerado em ${new Date().toLocaleDateString('pt-PT')}`],
-        [],
-        cabecalho,
-        ...linhas,
-        totais
-    ]);
-
-    folha['!cols'] = cabecalho.map((_, i) => ({ wch: i === 2 ? 38 : i === 1 ? 26 : 18 }));
-
-    const livro = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(livro, folha, titulo.substring(0, 31));
     const hoje = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(livro, `Bordaveiro_${titulo.replace(/\s+/g, '_')}_${hoje}.xlsx`);
+    await gerarExcelBordaveiro({
+        titulo, periodo, cabecalho, linhas, totais,
+        larguras: cabecalho.map((_, i) => i === 2 ? 38 : i === 1 ? 26 : 18),
+        colunasEsquerda: [1, 2],
+        ficheiro: `Bordaveiro_${titulo.replace(/\s+/g, '_')}_${hoje}.xlsx`
+    });
 }
 
 function limparFiltroEstatisticas() {
     document.getElementById('stat-data-inicio').value = '';
     document.getElementById('stat-data-fim').value = '';
+    document.getElementById('stat-faturacao').value = '';
     calcularEstatisticasGlobais();
 }
 

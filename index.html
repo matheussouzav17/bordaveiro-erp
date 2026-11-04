@@ -9,7 +9,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
   <!-- Exportação para Excel -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+  <script src="excel.js"></script>
 
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#8C5E3C">
@@ -223,6 +224,14 @@
                   <small style="font-weight: bold; color: #4A2511;">Até:</small>
                   <input type="date" id="filtro-data-ate" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; width: 100%; font-family: inherit;" onchange="renderizarPedidos()">
                 </div>
+                <div style="display: flex; align-items: center; gap: 5px; flex: 1; min-width: 160px;">
+                  <small style="font-weight: bold; color: #4A2511;">Faturação:</small>
+                  <select id="filtro-faturacao" style="padding: 6px; border: 1px solid #ccc; border-radius: 4px; width: 100%; font-family: inherit;" onchange="renderizarPedidos()">
+                    <option value="">Todos</option>
+                    <option value="a-faturar">A faturar</option>
+                    <option value="faturado">Faturado</option>
+                  </select>
+                </div>
                 <button class="btn-small" style="background: #B08D6A; padding: 7px 12px;" onclick="limparFiltroCalendarioPedidos()">Limpar</button>
               </div>
             </div>
@@ -296,6 +305,14 @@
             <div class="input-group" style="width: auto; margin-bottom: 0;">
               <label>Fim</label>
               <input type="date" id="stat-data-fim">
+            </div>
+            <div class="input-group" style="width: auto; margin-bottom: 0;">
+              <label>Faturação</label>
+              <select id="stat-faturacao">
+                <option value="">Todos</option>
+                <option value="a-faturar">A faturar</option>
+                <option value="faturado">Faturado</option>
+              </select>
             </div>
             <button class="btn-small" style="background-color: #8C5E3C; padding: 10px 20px;" onclick="calcularEstatisticasGlobais()">Aplicar</button>
             <button class="btn-small" style="background-color: #B08D6A; padding: 10px 20px;" onclick="limparFiltroEstatisticas()">Limpar</button>

@@ -1,10 +1,11 @@
-const CACHE_NAME = 'bordaveiro-v2'; // Mudamos a versão para forçar a atualização
+const CACHE_NAME = 'bordaveiro-v3'; // Mudamos a versão para forçar a atualização
 
 const ASSETS = [
   './',
   './index.html',
   './manifest.json',
-  './logo.png'
+  './logo.png',
+  './excel.js'
 ];
 
 // 1. INSTALAÇÃO (Força a app a atualizar imediatamente)
