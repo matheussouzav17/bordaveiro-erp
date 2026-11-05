@@ -664,7 +664,7 @@ function detalhesPedido(p) {
           <strong>${escapar(i.quantidade || 1)} × ${escapar(i.nome)}</strong>
           ${i.com_iva > 0 ? `<strong>${euro(i.com_iva)}</strong>` : ''}
         </div>
-        ${i.preco > 0 ? `<small>${euro(i.preco)} / unid.${i.iva > 0 ? ' s/ IVA' : ''}</small>` : ''}
+        ${i.preco > 0 ? `<small>${euro(i.preco)} / unid.${i.iva > 0 ? ' s/ IVA' : ''}${i.desconto > 0 ? ` · Desconto ${i.desconto}%` : ''}</small>` : ''}
         ${i.descricao ? `<small>${escapar(i.descricao)}</small>` : ''}
         ${i.codigos ? `<small>Linhas: ${escapar(i.codigos)}</small>` : ''}
         ${corTamanhos(i) ? `<small>${escapar(corTamanhos(i))}</small>` : ''}
@@ -723,25 +723,35 @@ const camposPrecoIva = (aoMudar, modo) => `
         <option value="acrescentar">Acrescentar IVA 23% ao preço</option>
         <option value="incluido">Preço já com IVA (retirar o IVA)</option>
         <option value="sem">Sem IVA</option>
+      </select>
+      <small>Desconto</small>
+      <select class="item-desconto" onchange="${aoMudar}">
+        <option value="0">Sem desconto</option>
+        <option value="5">5%</option>
+        <option value="10">10%</option>
+        <option value="15">15%</option>
       </select>`;
 
 const rotuloPreco = modo => ({ incluido: 'Preço unit. c/ IVA (€)', sem: 'Preço unit. (€)' }[modo] || 'Preço unit. s/ IVA (€)');
 
-function calcularItemIva(quantidade, precoDigitado, modo) {
+// desconto: percentagem (0, 5, 10 ou 15) aplicada ao total do produto; o preço unitário mantém-se sem desconto
+function calcularItemIva(quantidade, precoDigitado, modo, desconto = 0) {
+    const fator = 1 - (desconto || 0) / 100;
     if (modo === 'incluido') {
-        const comIva = arred(quantidade * precoDigitado);
+        const comIva = arred(quantidade * precoDigitado * fator);
         const semIva = arred(comIva / (1 + TAXA_IVA));
-        return { modo_iva: modo, preco_com_iva: precoDigitado, preco: arred(precoDigitado / (1 + TAXA_IVA)), sem_iva: semIva, iva: arred(comIva - semIva), com_iva: comIva };
+        return { modo_iva: modo, desconto, preco_com_iva: precoDigitado, preco: arred(precoDigitado / (1 + TAXA_IVA)), sem_iva: semIva, iva: arred(comIva - semIva), com_iva: comIva };
     }
-    const semIva = arred(quantidade * precoDigitado);
+    const semIva = arred(quantidade * precoDigitado * fator);
     const iva = modo === 'sem' ? 0 : arred(semIva * TAXA_IVA);
-    return { modo_iva: modo, preco: precoDigitado, sem_iva: semIva, iva, com_iva: arred(semIva + iva) };
+    return { modo_iva: modo, desconto, preco: precoDigitado, sem_iva: semIva, iva, com_iva: arred(semIva + iva) };
 }
 
 // Preenche o preço e o modo de IVA de um produto guardado
 function preencherPrecoIva(div, item) {
     const modo = item.modo_iva || 'acrescentar';
     div.querySelector('.item-modo-iva').value = modo;
+    div.querySelector('.item-desconto').value = String(item.desconto || 0);
     div.querySelector('.item-rotulo-preco').innerText = rotuloPreco(modo);
     const preco = modo === 'incluido' ? item.preco_com_iva : item.preco;
     if (preco) div.querySelector('.item-preco').value = preco;
@@ -819,7 +829,7 @@ function lerItensPedido() {
     return [...document.querySelectorAll('#lista-itens-pedido .item-pedido')].map(div => {
         const quantidade = parseInt(div.querySelector('.item-qtd').value) || 1;
         const preco = parseFloat(div.querySelector('.item-preco').value) || 0;
-        const valores = calcularItemIva(quantidade, preco, div.querySelector('.item-modo-iva').value);
+        const valores = calcularItemIva(quantidade, preco, div.querySelector('.item-modo-iva').value, parseInt(div.querySelector('.item-desconto').value) || 0);
         return {
             nome: div.querySelector('.item-nome').value.trim(),
             descricao: div.querySelector('.item-descricao').value.trim(),
@@ -1503,7 +1513,7 @@ function lerItensEdicao() {
         const modo = div.querySelector('.item-modo-iva');
         const valores = edicaoSemIva
             ? { preco, sem_iva: arred(quantidade * preco), iva: 0, com_iva: arred(quantidade * preco) }
-            : calcularItemIva(quantidade, preco, modo.value);
+            : calcularItemIva(quantidade, preco, modo.value, parseInt(div.querySelector('.item-desconto')?.value) || 0);
         const letra = div.querySelector('.item-letra');
         const local = div.querySelector('.item-local');
         return {
@@ -2018,7 +2028,7 @@ async function gerarPDF(id) {
             ...estiloTabela,
             head: [['PRODUTO / DESCRIÇÃO', 'QTD.', 'PREÇO S/ IVA', 'IVA 23%', 'TOTAL']],
             body: itens.map(i => [
-                [i.nome, i.descricao, corTamanhos(i), letraLocal(i)].filter(Boolean).join('\n'),
+                [i.nome, i.descricao, corTamanhos(i), letraLocal(i), i.desconto > 0 && `Desconto: ${i.desconto}%`].filter(Boolean).join('\n'),
                 String(i.quantidade),
                 euro(i.preco),
                 euro(i.iva),
