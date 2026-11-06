@@ -375,6 +375,7 @@ function adicionarItem() {
         <div><small>Letra</small><input type="text" class="item-letra" maxlength="100" placeholder="Ex: Cursiva, Arial"></div>
         <div><small>Local do bordado</small><input type="text" class="item-local" maxlength="150" placeholder="Ex: Peito esquerdo, costas"></div>
       </div>
+      <small>Observação</small><input type="text" class="item-observacao" maxlength="500" placeholder="Ex: Bordado do lado esquerdo, em cima">
       <div class="item-linha">
         <div style="max-width: 140px;"><small>Quantidade</small><input type="number" class="item-qtd" min="1" step="1" value="1"></div>
       </div>`;
@@ -392,6 +393,7 @@ function lerItens() {
             tamanhos: lerTamanhos(div),
             letra: div.querySelector('.item-letra').value.trim(),
             local: div.querySelector('.item-local').value.trim(),
+            observacao: div.querySelector('.item-observacao').value.trim(),
             quantidade: parseInt(div.querySelector('.item-qtd').value) || 1
         }))
         .filter(i => i.nome);
@@ -639,6 +641,7 @@ function detalhesPedido(p) {
             ${i.codigos ? `<small>Cor / código da linha: ${escapar(i.codigos)}</small>` : ''}
             ${corTamanhos(i) ? `<small>${escapar(corTamanhos(i))}</small>` : ''}
             ${letraLocal(i) ? `<small>${escapar(letraLocal(i))}</small>` : ''}
+            ${i.observacao ? `<small>Observação: ${escapar(i.observacao)}</small>` : ''}
           </div>`).join('')}
         ${p.cor_linha ? `<p><strong>Cor da linha:</strong> ${escapar(p.cor_linha)}</p>` : ''}
         ${p.data_pretendida ? `<p><strong>Data pretendida:</strong> ${formatarData(p.data_pretendida)}</p>` : ''}

@@ -669,6 +669,7 @@ function detalhesPedido(p) {
         ${i.codigos ? `<small>Linhas: ${escapar(i.codigos)}</small>` : ''}
         ${corTamanhos(i) ? `<small>${escapar(corTamanhos(i))}</small>` : ''}
         ${letraLocal(i) ? `<small>${escapar(letraLocal(i))}</small>` : ''}
+        ${i.observacao ? `<small>Observação: ${escapar(i.observacao)}</small>` : ''}
       </div>`).join('');
 
     const campos = [
@@ -730,7 +731,9 @@ const camposPrecoIva = (aoMudar, modo) => `
         <option value="5">5%</option>
         <option value="10">10%</option>
         <option value="15">15%</option>
-      </select>`;
+      </select>
+      <small>Observação</small>
+      <input type="text" class="item-observacao" maxlength="500" placeholder="Ex: Bordado do lado esquerdo, em cima" oninput="${aoMudar}">`;
 
 const rotuloPreco = modo => ({ incluido: 'Preço unit. c/ IVA (€)', sem: 'Preço unit. (€)' }[modo] || 'Preço unit. s/ IVA (€)');
 
@@ -752,6 +755,7 @@ function preencherPrecoIva(div, item) {
     const modo = item.modo_iva || 'acrescentar';
     div.querySelector('.item-modo-iva').value = modo;
     div.querySelector('.item-desconto').value = String(item.desconto || 0);
+    div.querySelector('.item-observacao').value = item.observacao || '';
     div.querySelector('.item-rotulo-preco').innerText = rotuloPreco(modo);
     const preco = modo === 'incluido' ? item.preco_com_iva : item.preco;
     if (preco) div.querySelector('.item-preco').value = preco;
@@ -837,6 +841,7 @@ function lerItensPedido() {
             cor: div.querySelector('.item-cor').value.trim(),
             genero: div.querySelector('.item-genero').value,
             tamanhos: lerTamanhos(div),
+            observacao: div.querySelector('.item-observacao').value.trim(),
             quantidade, ...valores, _div: div
         };
     });
@@ -1525,6 +1530,7 @@ function lerItensEdicao() {
             genero: div.querySelector('.item-genero').value,
             tamanhos: lerTamanhos(div),
             ...(letra && { letra: letra.value.trim(), local: local.value.trim() }),
+            ...(div.querySelector('.item-observacao') && { observacao: div.querySelector('.item-observacao').value.trim() }),
             quantidade, ...valores, _div: div
         };
     });
@@ -2028,7 +2034,7 @@ async function gerarPDF(id) {
             ...estiloTabela,
             head: [['PRODUTO / DESCRIÇÃO', 'QTD.', 'PREÇO S/ IVA', 'IVA 23%', 'TOTAL']],
             body: itens.map(i => [
-                [i.nome, i.descricao, corTamanhos(i), letraLocal(i), i.desconto > 0 && `Desconto: ${i.desconto}%`].filter(Boolean).join('\n'),
+                [i.nome, i.descricao, corTamanhos(i), letraLocal(i), i.observacao && `Obs.: ${i.observacao}`, i.desconto > 0 && `Desconto: ${i.desconto}%`].filter(Boolean).join('\n'),
                 String(i.quantidade),
                 euro(i.preco),
                 euro(i.iva),

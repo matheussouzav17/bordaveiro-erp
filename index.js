@@ -342,6 +342,7 @@ function itensDoCliente(json) {
       tamanhos: texto(i?.tamanhos, 300),
       letra: texto(i?.letra, 100),
       local: texto(i?.local, 150),
+      observacao: texto(i?.observacao, 500),
       quantidade: Math.min(Math.max(parseInt(i?.quantidade) || 1, 1), 10000)
     }))
     .filter(i => i.nome)
@@ -363,7 +364,7 @@ app.get('/portal/pedidos', apenasCliente, async (req, res) => {
 
   // Os preços que a Bordaveiro acrescentar aos produtos não são mostrados ao cliente
   (data || []).forEach(p => {
-    if (Array.isArray(p.itens)) p.itens = p.itens.map(({ nome, descricao, codigos, cor, genero, tamanhos, letra, local, quantidade }) => ({ nome, descricao, codigos, cor, genero, tamanhos, letra, local, quantidade }));
+    if (Array.isArray(p.itens)) p.itens = p.itens.map(({ nome, descricao, codigos, cor, genero, tamanhos, letra, local, observacao, quantidade }) => ({ nome, descricao, codigos, cor, genero, tamanhos, letra, local, observacao, quantidade }));
   });
   res.json(await assinarFicheiros(data || []));
 });
