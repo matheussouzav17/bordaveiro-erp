@@ -593,8 +593,10 @@ function renderizarPedidos() {
         const btnFaturado = (ehOrcamento || doPortal || cancelado)
             ? ''
             : p.faturado
-            ? `<button class="btn-small" style="background:#7f8c8d;" onclick="mudarFaturado(${p.id}, false)" title="Voltar a marcar como por faturar">Desfazer faturado</button>`
-            : `<button class="btn-small" style="background:#2980b9;" onclick="mudarFaturado(${p.id}, true)">Faturado</button>`;
+            ? `<button class="btn-small" style="background:#7f8c8d;" onclick="mudarFaturado(${p.id}, false)" title="Voltar a marcar como por faturar">Desfazer faturado</button>
+               <input type="date" id="data-fat-${p.id}" value="${escapar(p.data_faturado || '')}" title="Data de faturação" onchange="mudarDataFaturado(${p.id}, this.value)" style="padding:5px; border:1px solid #ccc; border-radius:4px; font-size:13px;">`
+            : `<button class="btn-small" style="background:#2980b9;" onclick="mudarFaturado(${p.id}, true)">Faturado</button>
+               <input type="date" id="data-fat-${p.id}" title="Data de faturação (vazio = hoje)" style="padding:5px; border:1px solid #ccc; border-radius:4px; font-size:13px;">`;
 
         const btnEditar = `<button class="btn-small" style="background:#f39c12;" onclick="abrirEditarPedido(${p.id})">Editar</button>`;
 
@@ -619,7 +621,7 @@ function renderizarPedidos() {
         painel.innerHTML += `
       <div class="cartao-pedido${pedidosAbertos.has(p.id) ? ' aberto' : ''}" onclick="alternarDetalhesPedido(event, ${p.id})" style="border-left: 5px solid ${corBorda}; background: white; padding: 15px; margin-bottom: 12px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
         <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom: 8px; gap: 10px; flex-wrap: wrap;">
-          <strong style="font-size: 15px; color: #4A2511;">#${p.id} - ${escapar(p.descricao)}${ehOrcamento ? ' <span style="font-size:11px; background:#E5A83B; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ORÇAMENTO</span>' : ''}${doPortal ? ' <span class="badge-portal">PORTAL</span>' : ''}${cancelado ? ' <span class="badge-cancelado">CANCELADO PELO CLIENTE</span>' : ''}${p.faturado && !ehOrcamento && !doPortal && !cancelado ? ' <span style="font-size:11px; background:#2980b9; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">FATURADO</span>' : ''}</strong>
+          <strong style="font-size: 15px; color: #4A2511;">#${p.id} - ${escapar(p.descricao)}${ehOrcamento ? ' <span style="font-size:11px; background:#E5A83B; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ORÇAMENTO</span>' : ''}${doPortal ? ' <span class="badge-portal">PORTAL</span>' : ''}${cancelado ? ' <span class="badge-cancelado">CANCELADO PELO CLIENTE</span>' : ''}${p.faturado && !ehOrcamento && !doPortal && !cancelado ? ' <span style="font-size:11px; background:#2980b9; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">FATURADO' + (p.data_faturado ? ' · ' + formatarData(p.data_faturado) : '') + '</span>' : ''}</strong>
           <div style="display:flex; gap:6px; flex-wrap: wrap;">${botaoDst}${urlPdf ? `<a href="${escapar(urlPdf)}" target="_blank" class="btn-small" style="background:#c0392b;">PDF guardado</a>` : ''}<button class="btn-small" style="background:#A67B5B;" onclick="gerarPDF(${p.id})">Gerar PDF</button></div>
         </div>
         <div class="pedido-corpo${urlsImagem.length > 1 ? ' varias-imagens' : ''}">
@@ -650,7 +652,7 @@ const pedidosAbertos = new Set();
 
 function alternarDetalhesPedido(evento, id) {
     // Botões e links mantêm a sua função; selecionar texto também não abre nem fecha
-    if (evento.target.closest('button, a') || String(window.getSelection())) return;
+    if (evento.target.closest('button, a, input') || String(window.getSelection())) return;
     if (pedidosAbertos.has(id)) pedidosAbertos.delete(id); else pedidosAbertos.add(id);
     evento.currentTarget.classList.toggle('aberto');
 }
@@ -962,6 +964,25 @@ function validarLimiteFicheiros(input, jaExistentes = 0) {
     return false;
 }
 
+// Procura um pedido do mesmo cliente, no mesmo mês, com os mesmos produtos e valor
+function encontrarPedidoDuplicado(clienteId, ehOrcamento) {
+    const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const assinatura = lista => lista.map(i => `${norm(i.nome)}x${i.quantidade || 1}`).sort().join('|');
+    const itens = itensValidos();
+    const sig = assinatura(itens);
+    const valor = parseFloat(document.getElementById('novo-valor').value || 0);
+    const mes = new Date().toISOString().slice(0, 7);
+
+    return pedidosGlobais.find(p => {
+        if (String(p.cliente_id) !== String(clienteId)) return false;
+        if (p.status === 'Cancelado') return false;
+        if ((p.status === 'Orçamento') !== ehOrcamento) return false;
+        if (String(p.data_pedido || '').slice(0, 7) !== mes) return false;
+        const sigP = Array.isArray(p.itens) && p.itens.length ? assinatura(p.itens) : `${norm(p.descricao)}x1`;
+        return sigP === sig && Math.abs(parseFloat(p.valor || 0) - valor) < 0.005;
+    });
+}
+
 // Guarda um pedido (status 'Pendente') ou um orçamento (status 'Orçamento')
 async function guardarPedido(status = 'Pendente') {
     const ehOrcamento = status === 'Orçamento';
@@ -972,6 +993,13 @@ async function guardarPedido(status = 'Pendente') {
     if (!itensValidos().some(i => i.nome)) { msg.style.color = 'red'; msg.innerText = 'Indique o nome de pelo menos um produto.'; return; }
     if (ehOrcamento && !(parseFloat(document.getElementById('novo-valor').value) > 0)) {
         msg.style.color = 'red'; msg.innerText = 'Para gerar o orçamento, preencha o valor.'; return;
+    }
+
+    const duplicado = encontrarPedidoDuplicado(clienteId, ehOrcamento);
+    if (duplicado) {
+        const quando = duplicado.data_pedido ? formatarData(String(duplicado.data_pedido).slice(0, 10)) : 'este mês';
+        const continuar = confirm(`Atenção: já existe ${duplicado.status === 'Orçamento' ? 'um orçamento' : 'um pedido'} (#${duplicado.id}, de ${quando}) para este cliente, neste mês, com as mesmas informações.\n\nQuer mesmo ${ehOrcamento ? 'gerar o orçamento' : 'guardar o pedido'} outra vez?\n\nOK = confirmar  |  Cancelar = não guardar`);
+        if (!continuar) { msg.style.color = 'red'; msg.innerText = 'Cancelado: possível pedido duplicado.'; return; }
     }
 
     try {
@@ -1030,12 +1058,20 @@ async function mudarStatus(id, novoStatus) {
     carregarPedidos();
 }
 
-async function mudarFaturado(id, faturado) {
+async function mudarDataFaturado(id, data) {
+    await mudarFaturado(id, true, data);
+}
+
+async function mudarFaturado(id, faturado, data) {
+    if (faturado && data === undefined) {
+        const campo = document.getElementById(`data-fat-${id}`);
+        data = campo && campo.value ? campo.value : undefined;
+    }
     try {
         const res = await api(`${URL_API}/pedidos/${id}/faturado`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ faturado })
+            body: JSON.stringify({ faturado, data_faturado: data })
         });
         if (!res.ok) throw new Error();
     } catch (e) {

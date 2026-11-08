@@ -676,7 +676,7 @@ function renderizarPedidos() {
             <div style="display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center;">
               <strong style="color: #4A2511;">Pedido nº ${p.id}</strong>
               <span>
-                ${ehAprovado(p) ? `<span class="portal-estado" style="background: ${p.faturado ? '#2980b9' : '#95a5a6'};">${p.faturado ? 'Faturado' : 'A faturar'}</span>` : ''}
+                ${ehAprovado(p) ? `<span class="portal-estado" style="background: ${p.faturado ? '#2980b9' : '#95a5a6'};">${p.faturado ? 'Faturado' + (p.data_faturado ? ' · ' + formatarData(p.data_faturado) : '') : 'A faturar'}</span>` : ''}
                 <span class="portal-estado" style="background: ${estado.cor};">${estado.texto}</span>
               </span>
             </div>
@@ -725,7 +725,7 @@ async function exportarRelatorio() {
         formatarData(p.data_pretendida),
         formatarData(p.data_entrega),
         estadoCliente(p).texto,
-        p.faturado ? 'Faturado' : 'A faturar'
+        p.faturado ? 'Faturado' + (p.data_faturado ? ' · ' + formatarData(p.data_faturado) : '') : 'A faturar'
     ]);
 
     const sufixo = de || ate ? `_${de || "inicio"}_a_${ate || "hoje"}` : "";

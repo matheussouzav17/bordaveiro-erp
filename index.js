@@ -352,7 +352,7 @@ function itensDoCliente(json) {
 app.get('/portal/pedidos', apenasCliente, async (req, res) => {
   const { data, error } = await supabase
     .from('pedidos')
-    .select('id, data_pedido, descricao, itens, cor_linha, data_pretendida, data_entrega, status, faturado, arquivo_imagem, arquivo_dst')
+    .select('id, data_pedido, descricao, itens, cor_linha, data_pretendida, data_entrega, status, faturado, data_faturado, arquivo_imagem, arquivo_dst')
     .eq('cliente_id', req.utilizador.cliente_id)
     .neq('status', 'Orçamento')
     .order('id', { ascending: false });
@@ -690,7 +690,10 @@ app.patch('/pedidos/:id/status', async (req, res) => {
 
 // Marca (ou desmarca) um pedido como faturado
 app.patch('/pedidos/:id/faturado', async (req, res) => {
-  const { error } = await supabase.from('pedidos').update({ faturado: req.body.faturado === true }).eq('id', req.params.id);
+  const faturado = req.body.faturado === true;
+  const dataValida = /^\d{4}-\d{2}-\d{2}$/.test(req.body.data_faturado || '');
+  const data_faturado = !faturado ? null : dataValida ? req.body.data_faturado : new Date().toISOString().slice(0, 10);
+  const { error } = await supabase.from('pedidos').update({ faturado, data_faturado }).eq('id', req.params.id);
   if (error) {
     console.error(error);
     return res.status(500).json({ erro: 'Erro ao atualizar a faturação.' });
