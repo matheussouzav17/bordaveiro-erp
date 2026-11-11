@@ -622,7 +622,7 @@ function renderizarPedidos() {
       <div class="cartao-pedido${pedidosAbertos.has(p.id) ? ' aberto' : ''}" onclick="alternarDetalhesPedido(event, ${p.id})" style="border-left: 5px solid ${corBorda}; background: white; padding: 15px; margin-bottom: 12px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
         <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom: 8px; gap: 10px; flex-wrap: wrap;">
           <strong style="font-size: 15px; color: #4A2511;">#${p.id} - ${escapar(p.descricao)}${ehOrcamento ? ' <span style="font-size:11px; background:#E5A83B; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ORÇAMENTO</span>' : ''}${doPortal ? ' <span class="badge-portal">PORTAL</span>' : ''}${cancelado ? ' <span class="badge-cancelado">CANCELADO PELO CLIENTE</span>' : ''}${p.faturado && !ehOrcamento && !doPortal && !cancelado ? ' <span style="font-size:11px; background:#2980b9; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">FATURADO' + (p.data_faturado ? ' · ' + formatarData(p.data_faturado) : '') + '</span>' : ''}</strong>
-          <div style="display:flex; gap:6px; flex-wrap: wrap;">${botaoDst}${urlPdf ? `<a href="${escapar(urlPdf)}" target="_blank" class="btn-small" style="background:#c0392b;">PDF guardado</a>` : ''}<button class="btn-small" style="background:#A67B5B;" onclick="gerarPDF(${p.id})">Gerar PDF</button></div>
+          <div style="display:flex; gap:6px; flex-wrap: wrap;">${botaoDst}${urlPdf ? `<a href="${escapar(urlPdf)}" target="_blank" class="btn-small" style="background:#c0392b;">PDF guardado</a>` : ''}<button class="btn-small" style="background:#A67B5B;" onclick="gerarPDF(${p.id}, 'cliente', true)">Imprimir via cliente</button><button class="btn-small" style="background:#7a5a40;" onclick="gerarPDF(${p.id}, 'loja', true)">Imprimir via loja</button></div>
         </div>
         <div class="pedido-corpo${urlsImagem.length > 1 ? ' varias-imagens' : ''}">
           ${miniatura}
@@ -1964,10 +1964,15 @@ async function carregarImagemPDF(url) {
 }
 
 // Pensado para impressora laser a preto e branco: sem fundos cheios, só o logo e linhas finas
-async function gerarPDF(id) {
+// via: 'cliente' (completa, com termos no verso, guardada na nuvem) ou 'loja' (simplificada, 1 página, só para imprimir)
+// imprimir: abre o PDF numa nova janela já com o diálogo de impressão
+async function gerarPDF(id, via = 'cliente', imprimir = false) {
     const { jsPDF } = window.jspdf;
     const p = pedidosGlobais.find(item => item.id === id);
     if (!p) return;
+    const viaLoja = via === 'loja';
+    // a janela tem de abrir já no clique, senão o navegador bloqueia
+    const janela = imprimir ? window.open('', '_blank') : null;
     const [logo, ...imagens] = await Promise.all([carregarLogoPDF(), ...lerUrls(p.arquivo_imagem).map(carregarImagemPDF)]);
     const desenhos = imagens.filter(Boolean);
 
@@ -2016,7 +2021,7 @@ async function gerarPDF(id) {
     doc.setTextColor(...CASTANHO);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(16);
-    doc.text(p.status === 'Orçamento' ? 'ORÇAMENTO' : 'ORÇAMENTO / PEDIDO', MARGEM, 44);
+    doc.text((p.status === 'Orçamento' ? 'ORÇAMENTO' : 'ORÇAMENTO / PEDIDO') + (viaLoja ? ' - VIA LOJA' : ''), MARGEM, 44);
 
     doc.setTextColor(60, 60, 60);
     doc.setFontSize(12);
@@ -2125,7 +2130,8 @@ async function gerarPDF(id) {
     doc.setTextColor(...CASTANHO);
     doc.text(euro(itens.length ? totaisItens(itens).comIva : valorTotal), DIREITA, y, { align: 'right' });
 
-    // ---------- Dados de pagamento ----------
+    // ---------- Dados de pagamento (só na via do cliente) ----------
+    if (!viaLoja) {
     y += 17;
     doc.setDrawColor(200, 200, 200);
     doc.line(MARGEM, y, DIREITA, y);
@@ -2140,8 +2146,30 @@ async function gerarPDF(id) {
      'Conta: 0286012420730',
      'IBAN: PT50 0035 0286 0001 2420 7307 6',
      'MBWay: 915 831 169'].forEach(linha => { y += 5.2; doc.text(linha, MARGEM, y); });
+    } else {
+        // via da loja: prazo de entrega em destaque, sem termos nem pagamento
+        y += 12;
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(0, 0, 0);
+        doc.text(`Entrega: ${dataEntrega}${textoPrazo}`, MARGEM, y);
 
-    // ---------- PÁGINA 2: termos e condições ----------
+        // campo para o cliente assinar (a loja fica com esta via assinada)
+        y += 30;
+        if (y > 262) { doc.addPage(); y = 30; }
+        doc.setDrawColor(90, 90, 90);
+        doc.setLineWidth(0.3);
+        doc.line(MARGEM, y, 125, y);
+        doc.line(140, y, DIREITA, y);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(...CINZA);
+        doc.text('Assinatura do cliente', MARGEM, y + 5);
+        doc.text('Data', 140, y + 5);
+    }
+
+    // ---------- PÁGINA 2: termos e condições (só na via do cliente) ----------
+    if (!viaLoja) {
     doc.addPage();
     doc.setTextColor(0, 0, 0);
     doc.setFont('helvetica', 'bold');
@@ -2208,8 +2236,16 @@ async function gerarPDF(id) {
     doc.setFontSize(9);
     doc.setTextColor(140, 140, 140);
     doc.text('Bordaveiro - Documento gerado eletronicamente', 105, 281, { align: 'center' });
+    }
 
+    if (viaLoja) {
+        // via interna: só imprime, não substitui o PDF do cliente guardado na nuvem
+        if (janela) { doc.autoPrint(); janela.location = doc.output('bloburl'); }
+        else doc.save(`Bordaveiro_Pedido_${p.id}_loja.pdf`);
+        return;
+    }
     doc.save(`Bordaveiro_Pedido_${p.id}.pdf`);
+    if (janela) { doc.autoPrint(); janela.location = doc.output('bloburl'); }
     await guardarPDFNaNuvem(p.id, doc.output('blob'));
 }
 
