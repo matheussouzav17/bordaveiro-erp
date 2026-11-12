@@ -10,6 +10,9 @@ const { rateLimit } = require('express-rate-limit');
 const { criarToken, autenticar, apenasAdmin, apenasEquipa, apenasCliente } = require('./auth');
 
 const app = express();
+// Atrás de um proxy (Render, Railway, nginx...) defina TRUST_PROXY=1 no .env, para o limite de
+// tentativas de login contar por visitante e não todos juntos como o IP do proxy
+if (process.env.TRUST_PROXY) app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -18,7 +21,7 @@ app.use(express.urlencoded({ extended: true }));
 const FICHEIROS_PUBLICOS = new Set([
   '/', '/index.html', '/script.js', '/style.css', '/sw.js', '/manifest.json',
   '/logo.png', '/logo-192.png', '/logo-512.png', '/fundo.jpg',
-  '/portal.html', '/portal.js', '/chat.js'
+  '/portal.html', '/portal.js', '/chat.js', '/excel.js', '/calculos.js'
 ]);
 // Endereço curto do portal para os clientes
 app.get('/portal', (req, res) => res.sendFile(path.join(__dirname, 'portal.html')));
@@ -74,6 +77,21 @@ function lerUrls(valor) {
 // Na base de dados fica sempre o link "public" do Storage; a API entrega links assinados
 // temporários, para que os buckets possam ser privados
 const VALIDADE_LINKS = 12 * 60 * 60; // segundos
+const linksAssinados = new Map(); // "bucket/caminho" -> { url, expira }
+
+// Apaga do Storage os ficheiros que deixaram de pertencer a um pedido
+async function apagarFicheiros(urls) {
+  const porBucket = {};
+  for (const url of urls) {
+    const local = localDoFicheiro(url);
+    if (local) (porBucket[local.bucket] ??= []).push(local.caminho);
+  }
+  for (const [bucket, caminhos] of Object.entries(porBucket)) {
+    const { error } = await supabase.storage.from(bucket).remove(caminhos);
+    if (error) console.error('Erro ao apagar ficheiros:', error.message);
+    caminhos.forEach(c => linksAssinados.delete(`${bucket}/${c}`));
+  }
+}
 
 function localDoFicheiro(url) {
   const m = /\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/([^?]+)/.exec(url || '');
@@ -97,11 +115,26 @@ async function assinarFicheiros(pedidos) {
     }
   }
 
+  // A lista de pedidos é pedida a cada minuto por cada painel aberto: os links já assinados
+  // são reaproveitados enquanto lhes restar pelo menos metade da validade
+  const agora = Date.now();
   const assinados = {};
   for (const [bucket, caminhos] of Object.entries(porBucket)) {
-    const { data, error } = await supabase.storage.from(bucket).createSignedUrls([...caminhos], VALIDADE_LINKS);
+    const porAssinar = [];
+    for (const caminho of caminhos) {
+      const chave = `${bucket}/${caminho}`;
+      const guardado = linksAssinados.get(chave);
+      if (guardado && guardado.expira - agora > VALIDADE_LINKS * 500) assinados[chave] = guardado.url;
+      else porAssinar.push(caminho);
+    }
+    if (!porAssinar.length) continue;
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrls(porAssinar, VALIDADE_LINKS);
     if (error) { console.error('Erro ao assinar ficheiros:', error.message); continue; }
-    data.forEach(d => { if (d.signedUrl) assinados[`${bucket}/${d.path}`] = d.signedUrl; });
+    data.forEach(d => {
+      if (!d.signedUrl) return;
+      assinados[`${bucket}/${d.path}`] = d.signedUrl;
+      linksAssinados.set(`${bucket}/${d.path}`, { url: d.signedUrl, expira: agora + VALIDADE_LINKS * 1000 });
+    });
   }
 
   for (const p of pedidos) {
@@ -138,6 +171,7 @@ function camposPedido(dados) {
   return {
     ...(itens !== undefined && { itens }),
     descricao: dados.descricao,
+    ...(dados.subtitulo !== undefined && { subtitulo: String(dados.subtitulo).trim().slice(0, 120) || null }),
     origem_artigo: dados.origem_artigo,
     codigos_linhas: dados.codigos_linhas,
     valor: dados.valor || 0,
@@ -300,8 +334,20 @@ app.post('/portal/recuperar/concluir', limiteLogin, async (req, res) => {
   res.json({ sucesso: true });
 });
 
+// Uma conta eliminada perde o acesso no máximo um minuto depois, mesmo com o token ainda válido.
+// Se a base de dados falhar, a sessão não é cortada por causa disso.
+const contasVerificadas = new Map(); // id -> momento da última verificação
+async function contaAtiva(req, res, next) {
+  const id = String(req.utilizador.id);
+  if (Date.now() - (contasVerificadas.get(id) || 0) < 60 * 1000) return next();
+  const { data, error } = await supabase.from('utilizadores').select('id').eq('id', id).maybeSingle();
+  if (!error && !data) return res.status(401).json({ erro: 'Sessão terminada. Inicie sessão novamente.' });
+  if (!error) contasVerificadas.set(id, Date.now());
+  next();
+}
+
 // Daqui para baixo, todas as rotas exigem sessão iniciada
-app.use(autenticar);
+app.use(autenticar, contaAtiva);
 
 // Erros de upload (ficheiro grande demais, tipo errado, ficheiros a mais) devolvem uma mensagem clara
 function tratarUpload(req, res, next) {
@@ -527,11 +573,18 @@ app.post('/portal/senha', apenasCliente, limiteLogin, async (req, res) => {
 // Daqui para baixo, só a equipa Bordaveiro (admin e funcionários)
 app.use(apenasEquipa);
 
+// Um erro da base de dados nunca é respondido como sucesso
+function erroBD(res, error, mensagem) {
+  console.error(error);
+  return res.status(500).json({ erro: mensagem });
+}
+
 // ==========================================
 // 2. GESTÃO DE UTILIZADORES (ADMIN)
 // ==========================================
 app.get('/utilizadores', apenasAdmin, async (req, res) => {
-  const { data } = await supabase.from('utilizadores').select('id, nome, email, perfil, cliente_id, feedback_ativo, clientes(nome)');
+  const { data, error } = await supabase.from('utilizadores').select('id, nome, email, perfil, cliente_id, feedback_ativo, clientes(nome)');
+  if (error) return erroBD(res, error, 'Erro ao carregar os utilizadores.');
   res.json(data || []);
 });
 
@@ -602,7 +655,21 @@ app.post('/recuperacoes/:id/:decisao', apenasAdmin, async (req, res) => {
 });
 
 app.delete('/utilizadores/:id', apenasAdmin, async (req, res) => {
-  await supabase.from('utilizadores').delete().eq('id', req.params.id);
+  const { id } = req.params;
+  if (String(id) === String(req.utilizador.id)) return res.status(400).json({ erro: 'Não pode eliminar a sua própria conta.' });
+
+  const { data: conta, error: erroConta } = await supabase.from('utilizadores').select('id, perfil').eq('id', id).maybeSingle();
+  if (erroConta) return erroBD(res, erroConta, 'Erro ao eliminar a conta.');
+  if (!conta) return res.status(404).json({ erro: 'Conta não encontrada.' });
+  if (conta.perfil === 'admin') {
+    const { count, error: erroAdmins } = await supabase.from('utilizadores').select('id', { count: 'exact', head: true }).eq('perfil', 'admin');
+    if (erroAdmins) return erroBD(res, erroAdmins, 'Erro ao eliminar a conta.');
+    if (count <= 1) return res.status(400).json({ erro: 'Tem de existir pelo menos um administrador.' });
+  }
+
+  const { error } = await supabase.from('utilizadores').delete().eq('id', id);
+  if (error) return erroBD(res, error, 'Erro ao eliminar a conta.');
+  contasVerificadas.delete(String(id));
   res.json({ sucesso: true });
 });
 
@@ -610,12 +677,22 @@ app.delete('/utilizadores/:id', apenasAdmin, async (req, res) => {
 // 3. CLIENTES
 // ==========================================
 app.get('/clientes', async (req, res) => {
-  const { data } = await supabase.from('clientes').select('*');
+  const { data, error } = await supabase.from('clientes').select('*');
+  if (error) return erroBD(res, error, 'Erro ao carregar os clientes.');
   res.json(data || []);
 });
 
 app.post('/clientes', async (req, res) => {
-  const { data, error } = await supabase.from('clientes').insert([req.body]).select();
+  // Só os campos do formulário são gravados
+  const { nome, email, telefone, nif, aniversario } = req.body;
+  if (!texto(nome, 200)) return res.status(400).json({ erro: 'O nome é obrigatório.' });
+  const { data, error } = await supabase.from('clientes').insert([{
+    nome: texto(nome, 200),
+    email: texto(email, 200),
+    telefone: texto(telefone, 50),
+    nif: texto(nif, 30),
+    aniversario: dataValida(aniversario)
+  }]).select();
   if (error) return res.status(400).json({ erro: error.message });
   res.json(data);
 });
@@ -624,12 +701,16 @@ app.post('/clientes', async (req, res) => {
 // 4. PEDIDOS (COM FICHEIROS .DST E IMAGENS PNG)
 // ==========================================
 app.get('/pedidos', async (req, res) => {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('pedidos')
     .select('*, clientes(nome, telefone, nif)')
     .order('id', { ascending: false });
+  if (error) return erroBD(res, error, 'Erro ao carregar os pedidos.');
   res.json(await assinarFicheiros(data || []));
 });
+
+// Estados que a equipa pode atribuir ('Pedido Cliente' só nasce no portal)
+const ESTADOS_EQUIPA = ['Pendente', 'Concluído', 'Orçamento', ESTADO_CANCELADO];
 
 app.post('/pedidos', tratarUpload, async (req, res) => {
   try {
@@ -642,7 +723,7 @@ app.post('/pedidos', tratarUpload, async (req, res) => {
       .insert([{
         cliente_id: dados.cliente_id,
         ...camposPedido(dados),
-        status: dados.status || 'Pendente',
+        status: dados.status === 'Orçamento' ? 'Orçamento' : 'Pendente',
         arquivo_dst: urlDst,
         arquivo_imagem: urlImagem
       }])
@@ -665,6 +746,9 @@ app.put('/pedidos/:id', tratarUpload, async (req, res) => {
     const urlDst = guardarUrls([...lerUrls(dados.arquivo_dst).map(paraUrlGuardado), ...(await enviarFicheiros(req.files?.dst, 'matrizes', 'dst'))]);
     const urlImagem = guardarUrls([...lerUrls(dados.arquivo_imagem).map(paraUrlGuardado), ...(await enviarFicheiros(req.files?.imagem, 'imagens', 'img'))]);
 
+    const { data: anterior } = await supabase
+      .from('pedidos').select('arquivo_dst, arquivo_imagem').eq('id', id).maybeSingle();
+
     const { data, error } = await supabase
       .from('pedidos')
       .update({
@@ -676,6 +760,11 @@ app.put('/pedidos/:id', tratarUpload, async (req, res) => {
       .select();
 
     if (error) throw error;
+    if (!data.length) return res.status(404).json({ erro: 'Pedido não encontrado.' });
+
+    // Os ficheiros que o utilizador retirou do pedido saem também do Storage
+    const mantidos = new Set([...lerUrls(urlDst), ...lerUrls(urlImagem)]);
+    await apagarFicheiros([...lerUrls(anterior?.arquivo_dst), ...lerUrls(anterior?.arquivo_imagem)].filter(u => !mantidos.has(u)));
     res.json(data[0]);
   } catch (e) {
     console.error(e);
@@ -684,7 +773,11 @@ app.put('/pedidos/:id', tratarUpload, async (req, res) => {
 });
 
 app.patch('/pedidos/:id/status', async (req, res) => {
-  await supabase.from('pedidos').update({ status: req.body.status }).eq('id', req.params.id);
+  const { status } = req.body;
+  if (!ESTADOS_EQUIPA.includes(status)) return res.status(400).json({ erro: 'Estado inválido.' });
+  const { data, error } = await supabase.from('pedidos').update({ status }).eq('id', req.params.id).select('id');
+  if (error) return erroBD(res, error, 'Erro ao mudar o estado do pedido.');
+  if (!data.length) return res.status(404).json({ erro: 'Pedido não encontrado.' });
   res.json({ sucesso: true });
 });
 
@@ -725,12 +818,7 @@ app.patch('/pedidos/:id/confirmar', async (req, res) => {
 });
 
 // O PDF gerado na aplicação: cada pedido guarda só a última versão
-async function apagarPdfGuardado(url) {
-  const local = localDoFicheiro(url);
-  if (!local) return;
-  const { error } = await supabase.storage.from(local.bucket).remove([local.caminho]);
-  if (error) console.error('Erro ao apagar PDF:', error.message);
-}
+const apagarPdfGuardado = url => apagarFicheiros([url]);
 
 app.post('/pedidos/:id/pdf', (req, res, next) => {
   upload.single('pdf')(req, res, erro => {
@@ -761,9 +849,12 @@ app.post('/pedidos/:id/pdf', (req, res, next) => {
 });
 
 app.delete('/pedidos/:id', async (req, res) => {
-  const { data: pedido } = await supabase.from('pedidos').select('arquivo_pdf').eq('id', req.params.id).maybeSingle();
-  await supabase.from('pedidos').delete().eq('id', req.params.id);
-  await apagarPdfGuardado(pedido?.arquivo_pdf);
+  const { data: pedido } = await supabase
+    .from('pedidos').select('arquivo_pdf, arquivo_imagem, arquivo_dst').eq('id', req.params.id).maybeSingle();
+  const { error } = await supabase.from('pedidos').delete().eq('id', req.params.id);
+  if (error) return erroBD(res, error, 'Erro ao eliminar o pedido.');
+  // Só depois de o pedido sair da base de dados é que os ficheiros dele são apagados
+  await apagarFicheiros(['arquivo_pdf', 'arquivo_imagem', 'arquivo_dst'].flatMap(campo => lerUrls(pedido?.[campo])));
   res.json({ sucesso: true });
 });
 
@@ -771,17 +862,30 @@ app.delete('/pedidos/:id', async (req, res) => {
 // 5. ESTOQUE
 // ==========================================
 app.get('/estoque', async (req, res) => {
-  const { data } = await supabase.from('estoque').select('*');
+  const { data, error } = await supabase.from('estoque').select('*');
+  if (error) return erroBD(res, error, 'Erro ao carregar o estoque.');
   res.json(data || []);
 });
 
 app.post('/estoque', async (req, res) => {
-  await supabase.from('estoque').insert([req.body]);
+  // Só os campos do formulário são gravados
+  const { categoria, descricao, quantidade, tamanho, marca, codigo_linha } = req.body;
+  if (!texto(descricao, 300)) return res.status(400).json({ erro: 'Preencha a descrição.' });
+  const { error } = await supabase.from('estoque').insert([{
+    categoria: texto(categoria, 50),
+    descricao: texto(descricao, 300),
+    quantidade: Math.max(parseInt(quantidade) || 0, 0),
+    tamanho: texto(tamanho, 100),
+    marca: texto(marca, 100),
+    codigo_linha: texto(codigo_linha, 100)
+  }]);
+  if (error) return erroBD(res, error, 'Erro ao guardar o artigo.');
   res.json({ sucesso: true });
 });
 
 app.delete('/estoque/:id', async (req, res) => {
-  await supabase.from('estoque').delete().eq('id', req.params.id);
+  const { error } = await supabase.from('estoque').delete().eq('id', req.params.id);
+  if (error) return erroBD(res, error, 'Erro ao eliminar o artigo.');
   res.json({ sucesso: true });
 });
 
@@ -789,7 +893,8 @@ app.delete('/estoque/:id', async (req, res) => {
 // 6. RECLAMAÇÕES E SUGESTÕES
 // ==========================================
 app.get('/feedback', apenasAdmin, async (req, res) => {
-  const { data } = await supabase.from('feedback').select('*, utilizadores(feedback_ativo)').order('id', { ascending: false });
+  const { data, error } = await supabase.from('feedback').select('*, utilizadores(feedback_ativo)').order('id', { ascending: false });
+  if (error) return erroBD(res, error, 'Erro ao carregar as mensagens.');
   res.json(data || []);
 });
 
@@ -813,7 +918,8 @@ app.post('/feedback', async (req, res) => {
 });
 
 app.patch('/feedback/:id', apenasAdmin, async (req, res) => {
-  await supabase.from('feedback').update({ estado: req.body.estado }).eq('id', req.params.id);
+  const { error } = await supabase.from('feedback').update({ estado: texto(req.body.estado, 50) }).eq('id', req.params.id);
+  if (error) return erroBD(res, error, 'Erro ao atualizar a mensagem.');
   res.json({ sucesso: true });
 });
 

@@ -51,12 +51,15 @@ Funciona no browser e pode ser instalado no telemóvel como app (PWA).
 ├── auth.js        # tokens JWT e permissões por perfil
 ├── index.html     # painel da equipa
 ├── script.js      # lógica do painel
+├── calculos.js    # cálculos de IVA, descontos e valores (testados com `npm test`)
+├── testes/        # testes automáticos
 ├── portal.html    # portal do cliente
 ├── portal.js      # lógica do portal
 ├── chat.js        # chat de sugestões (painel e portal)
 ├── style.css      # estilos partilhados
 ├── sw.js          # service worker (PWA)
 ├── manifest.json  # dados da app instalável
+├── migracoes/     # SQL a correr uma vez no Supabase, pela ordem dos números
 └── video-portal/  # vídeo tutorial do portal (Remotion)
 ```
 

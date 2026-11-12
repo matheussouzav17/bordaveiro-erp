@@ -90,6 +90,11 @@
             </div>
 
             <div class="input-group">
+              <label>Subtítulo (opcional)</label>
+              <input type="text" id="novo-subtitulo" maxlength="120" placeholder="Nome da encomenda">
+            </div>
+
+            <div class="input-group">
               <label>Origem do Artigo</label>
               <select id="nova-origem" onchange="verificarOrigemArtigo()">
                 <option value="Cliente">Fornecido pelo cliente</option>
@@ -520,6 +525,7 @@
   <div id="avisos-estado" aria-live="polite"></div>
 
   <script src="chat.js"></script>
+  <script src="calculos.js"></script>
   <script src="script.js"></script>
 
 </body>

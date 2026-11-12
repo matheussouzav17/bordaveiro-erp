@@ -1,55 +1,53 @@
-const CACHE_NAME = 'bordaveiro-v3'; // Mudamos a versão para forçar a atualização
+const CACHE_NAME = 'bordaveiro-v4'; // Mudar a versão força a atualização e apaga a cache antiga
 
 const ASSETS = [
   './',
   './index.html',
+  './calculos.js',
+  './script.js',
+  './chat.js',
+  './excel.js',
+  './style.css',
   './manifest.json',
-  './logo.png',
-  './excel.js'
+  './logo.png'
 ];
 
 // 1. INSTALAÇÃO (Força a app a atualizar imediatamente)
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); 
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
   );
 });
 
-// 2. ATIVAÇÃO (Limpa o lixo e versões antigas)
+// 2. ATIVAÇÃO (Apaga as versões antigas da cache)
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cache) => {
-          if (cache !== CACHE_NAME) {
-            return caches.delete(cache);
-          }
-        })
-      );
-    })
+    caches.keys().then((cacheNames) => Promise.all(
+      cacheNames.filter((cache) => cache !== CACHE_NAME).map((cache) => caches.delete(cache))
+    ))
   );
 });
 
-// 3. ESTRATÉGIA "NETWORK FIRST" (A Internet primeiro, a Cache se falhar)
+// 3. ESTRATÉGIA "NETWORK FIRST" só para os ficheiros da app (páginas, scripts, estilos, imagens).
+// Os pedidos à API (dados de pedidos e clientes) nunca ficam guardados no browser:
+// são feitos com fetch(), que chega aqui com "destination" vazio.
 self.addEventListener('fetch', (event) => {
+  const pedido = event.request;
+  if (pedido.method !== 'GET' || !pedido.destination) return;
+
   event.respondWith(
-    // Tenta sempre ir buscar o teu código mais recente primeiro
-    fetch(event.request)
+    fetch(pedido)
       .then((respostaDaRede) => {
-        // Se a internet estiver a funcionar, guarda esta versão nova na memória
-        return caches.open(CACHE_NAME).then((cache) => {
-          // Não guardamos em cache os pedidos à base de dados (porta 3000)
-          if (!event.request.url.includes(':3000')) {
-             cache.put(event.request, respostaDaRede.clone());
-          }
-          return respostaDaRede;
-        });
+        // Links assinados do Storage (imagens dos pedidos) mudam sempre: não vale a pena guardá-los
+        const daApp = new URL(pedido.url).origin === self.location.origin;
+        if (respostaDaRede.ok && daApp) {
+          const copia = respostaDaRede.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(pedido, copia));
+        }
+        return respostaDaRede;
       })
-      .catch(() => {
-        // SE ESTIVER OFFLINE (Sem net ou se o teu servidor for abaixo), 
-        // vai buscar a última versão guardada na memória!
-        return caches.match(event.request);
-      })
+      // Sem internet (ou com o servidor em baixo): usa a última versão guardada
+      .catch(() => caches.match(pedido).then((guardada) => guardada || Response.error()))
   );
 });

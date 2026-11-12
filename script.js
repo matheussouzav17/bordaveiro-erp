@@ -26,6 +26,19 @@ async function api(url, opcoes = {}) {
     return resposta;
 }
 
+// Pedido à API que altera dados: devolve true se correu bem; se não, mostra o erro do servidor
+async function apiAlterar(url, opcoes, mensagemErro) {
+    try {
+        const res = await api(url, opcoes);
+        if (res.ok) return true;
+        const dados = await res.json().catch(() => ({}));
+        alert(dados.erro || mensagemErro);
+    } catch (e) {
+        if (e.message !== 'Sessão expirada') alert(mensagemErro);
+    }
+    return false;
+}
+
 // Estado dos pedidos enviados pelos clientes no portal, antes de a equipa os confirmar
 const ESTADO_PORTAL = 'Pedido Cliente';
 // Pedidos do portal cancelados pelo cliente (aparecem na aba Portal e não contam nas estatísticas)
@@ -286,7 +299,7 @@ async function decidirRecuperacao(id, decisao) {
 
 async function apagarUtilizador(id) {
     if (!confirm('Confirma a eliminação desta conta? Esta ação não pode ser revertida.')) return;
-    await api(`${URL_API}/utilizadores/${id}`, { method: 'DELETE' });
+    await apiAlterar(`${URL_API}/utilizadores/${id}`, { method: 'DELETE' }, 'Não foi possível eliminar a conta.');
     carregarUtilizadores();
 }
 
@@ -296,6 +309,7 @@ async function apagarUtilizador(id) {
 
 async function carregarClientes() {
     const resposta = await api(`${URL_API}/clientes`);
+    if (!resposta.ok) { console.error('Não foi possível carregar os clientes.'); return; }
     clientesGlobais = await resposta.json();
     verificarAniversarios();
 }
@@ -444,6 +458,8 @@ function mudarAba(aba) {
 
 async function carregarPedidos() {
     const resposta = await api(`${URL_API}/pedidos`);
+    // Se o servidor falhar, a lista que já está no ecrã mantém-se (em vez de aparecer vazia)
+    if (!resposta.ok) { console.error('Não foi possível carregar os pedidos.'); return; }
     pedidosGlobais = await resposta.json();
     avisarPedidosPortal(pedidosGlobais);
     renderizarPedidos();
@@ -545,7 +561,8 @@ function renderizarPedidos() {
         else naAba = !['Concluído', 'Orçamento', ESTADO_PORTAL, ESTADO_CANCELADO].includes(p.status);
         const desc = p.descricao ? p.descricao.toLowerCase() : '';
         const nomeCli = p.clientes && p.clientes.nome ? p.clientes.nome.toLowerCase() : '';
-        const bateTexto = desc.includes(textoPesquisa) || nomeCli.includes(textoPesquisa);
+        const subtitulo = p.subtitulo ? p.subtitulo.toLowerCase() : '';
+        const bateTexto = desc.includes(textoPesquisa) || nomeCli.includes(textoPesquisa) || subtitulo.includes(textoPesquisa);
 
         let bateData = true;
         if (dataDe || dataAte) {
@@ -621,7 +638,7 @@ function renderizarPedidos() {
         painel.innerHTML += `
       <div class="cartao-pedido${pedidosAbertos.has(p.id) ? ' aberto' : ''}" onclick="alternarDetalhesPedido(event, ${p.id})" style="border-left: 5px solid ${corBorda}; background: white; padding: 15px; margin-bottom: 12px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
         <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom: 8px; gap: 10px; flex-wrap: wrap;">
-          <strong style="font-size: 15px; color: #4A2511;">#${p.id} - ${escapar(p.descricao)}${ehOrcamento ? ' <span style="font-size:11px; background:#E5A83B; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ORÇAMENTO</span>' : ''}${doPortal ? ' <span class="badge-portal">PORTAL</span>' : ''}${cancelado ? ' <span class="badge-cancelado">CANCELADO PELO CLIENTE</span>' : ''}${p.faturado && !ehOrcamento && !doPortal && !cancelado ? ' <span style="font-size:11px; background:#2980b9; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">FATURADO' + (p.data_faturado ? ' · ' + formatarData(p.data_faturado) : '') + '</span>' : ''}</strong>
+          <strong style="font-size: 15px; color: #4A2511;">#${p.id} - ${escapar(p.descricao)}${ehOrcamento ? ' <span style="font-size:11px; background:#E5A83B; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ORÇAMENTO</span>' : ''}${doPortal ? ' <span class="badge-portal">PORTAL</span>' : ''}${cancelado ? ' <span class="badge-cancelado">CANCELADO PELO CLIENTE</span>' : ''}${p.faturado && !ehOrcamento && !doPortal && !cancelado ? ' <span style="font-size:11px; background:#2980b9; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">FATURADO' + (p.data_faturado ? ' · ' + formatarData(p.data_faturado) : '') + '</span>' : ''}${p.subtitulo ? `<span style="display:block; font-size:13px; font-weight:normal; font-style:italic; color:#8C5E3C; margin-top:2px;">${escapar(p.subtitulo)}</span>` : ''}</strong>
           <div style="display:flex; gap:6px; flex-wrap: wrap;">${botaoDst}${urlPdf ? `<a href="${escapar(urlPdf)}" target="_blank" class="btn-small" style="background:#c0392b;">PDF guardado</a>` : ''}<button class="btn-small" style="background:#A67B5B;" onclick="gerarPDF(${p.id}, 'cliente', true)">Imprimir via cliente</button><button class="btn-small" style="background:#7a5a40;" onclick="gerarPDF(${p.id}, 'loja', true)">Imprimir via loja</button></div>
         </div>
         <div class="pedido-corpo${urlsImagem.length > 1 ? ' varias-imagens' : ''}">
@@ -704,8 +721,6 @@ function limparFiltroCalendarioPedidos() {
 }
 
 // --- Produtos do pedido com IVA ---
-const TAXA_IVA = 0.23;
-const arred = n => Math.round(n * 100) / 100;
 // "Letra: X · Local: Y" de um produto (vazio se não tiver nenhum dos dois)
 const letraLocal = i => [i.letra && `Letra: ${i.letra}`, i.local && `Local: ${i.local}`].filter(Boolean).join(' · ');
 // "Cor: X · Masculino · Tamanhos: Y" de um produto (vazio se não tiver nenhum)
@@ -739,18 +754,6 @@ const camposPrecoIva = (aoMudar, modo) => `
 
 const rotuloPreco = modo => ({ incluido: 'Preço unit. c/ IVA (€)', sem: 'Preço unit. (€)' }[modo] || 'Preço unit. s/ IVA (€)');
 
-// desconto: percentagem (0, 5, 10 ou 15) aplicada ao total do produto; o preço unitário mantém-se sem desconto
-function calcularItemIva(quantidade, precoDigitado, modo, desconto = 0) {
-    const fator = 1 - (desconto || 0) / 100;
-    if (modo === 'incluido') {
-        const comIva = arred(quantidade * precoDigitado * fator);
-        const semIva = arred(comIva / (1 + TAXA_IVA));
-        return { modo_iva: modo, desconto, preco_com_iva: precoDigitado, preco: arred(precoDigitado / (1 + TAXA_IVA)), sem_iva: semIva, iva: arred(comIva - semIva), com_iva: comIva };
-    }
-    const semIva = arred(quantidade * precoDigitado * fator);
-    const iva = modo === 'sem' ? 0 : arred(semIva * TAXA_IVA);
-    return { modo_iva: modo, desconto, preco: precoDigitado, sem_iva: semIva, iva, com_iva: arred(semIva + iva) };
-}
 
 // Preenche o preço e o modo de IVA de um produto guardado
 function preencherPrecoIva(div, item) {
@@ -849,11 +852,6 @@ function lerItensPedido() {
     });
 }
 
-function totaisItens(itens) {
-    const semIva = arred(itens.reduce((s, i) => s + i.sem_iva, 0));
-    const iva = arred(itens.reduce((s, i) => s + i.iva, 0));
-    return { semIva, iva, comIva: arred(semIva + iva) };
-}
 
 function atualizarTotaisIva() {
     const euro = n => `€ ${n.toFixed(2)}`;
@@ -878,7 +876,7 @@ function itensValidos() {
 }
 
 function limparFormularioPedido() {
-    ['pesquisa-cliente-input', 'novo-cliente-id', 'novo-valor',
+    ['pesquisa-cliente-input', 'novo-cliente-id', 'novo-subtitulo', 'novo-valor',
      'novo-valor-pago', 'nova-imagem', 'novo-dst', 'nova-data-producao', 'nova-data-entrega']
         .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     document.getElementById('lista-itens-pedido').innerHTML = '';
@@ -898,6 +896,8 @@ function construirFormDataPedido(clienteId, status) {
     // A descrição do pedido são os nomes dos produtos
     formData.append('descricao', itens.map(i => i.nome).filter(Boolean).join(', '));
     formData.append('itens', JSON.stringify(itens));
+    const subtitulo = document.getElementById('novo-subtitulo').value.trim();
+    if (subtitulo) formData.append('subtitulo', subtitulo);
     formData.append('origem_artigo', document.getElementById('nova-origem').value);
     formData.append('codigos_linhas', juntarCodigos(lerItensPedido()));
     formData.append('valor', document.getElementById('novo-valor').value || 0);
@@ -1050,11 +1050,11 @@ async function aprovarOrcamento(id) {
 }
 
 async function mudarStatus(id, novoStatus) {
-    await api(`${URL_API}/pedidos/${id}/status`, {
+    await apiAlterar(`${URL_API}/pedidos/${id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: novoStatus })
-    });
+    }, 'Não foi possível mudar o estado do pedido. Tente novamente.');
     carregarPedidos();
 }
 
@@ -1082,7 +1082,7 @@ async function mudarFaturado(id, faturado, data) {
 
 async function apagarPedido(id) {
     if (!confirm('Confirma a eliminação deste pedido? Esta ação não pode ser revertida.')) return;
-    await api(`${URL_API}/pedidos/${id}`, { method: 'DELETE' });
+    await apiAlterar(`${URL_API}/pedidos/${id}`, { method: 'DELETE' }, 'Não foi possível eliminar o pedido. Tente novamente.');
     carregarPedidos();
 }
 
@@ -1288,11 +1288,11 @@ async function alterarFeedbackCliente(utilizadorId, ativo) {
 }
 
 async function mudarEstadoFeedback(id, estado) {
-    await api(`${URL_API}/feedback/${id}`, {
+    await apiAlterar(`${URL_API}/feedback/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ estado })
-    });
+    }, 'Não foi possível atualizar a mensagem.');
     carregarFeedback();
 }
 
@@ -1427,6 +1427,10 @@ function abrirEditarPedido(id) {
           <label>Descrição</label>
           <input type="text" id="edit-descricao">
         </div>
+        <div class="input-group">
+          <label>Subtítulo (opcional)</label>
+          <input type="text" id="edit-subtitulo" maxlength="120">
+        </div>
         <div class="caixa-produtos">
           <label style="display: block; font-weight: bold; margin-bottom: 10px; color: #4A2511;">Produtos / Serviços</label>
           <div id="edit-lista-itens"></div>
@@ -1470,6 +1474,7 @@ function abrirEditarPedido(id) {
     document.getElementById('edit-id-titulo').innerText = p.id;
     document.getElementById('edit-id').value = p.id;
     document.getElementById('edit-descricao').value = p.descricao || '';
+    document.getElementById('edit-subtitulo').value = p.subtitulo || '';
     document.getElementById('edit-valor').value = p.valor || '';
     edicaoSemIva = ehPedidoDP(p);
     document.querySelectorAll('.edit-so-iva').forEach(el => el.style.display = edicaoSemIva ? 'none' : '');
@@ -1626,10 +1631,13 @@ async function guardarEdicaoPedido() {
     formData.append('data_entrega', document.getElementById('edit-data-entrega').value || '');
     formData.append('arquivo_dst', JSON.stringify(ficheirosEdicao.dst));
     formData.append('arquivo_imagem', JSON.stringify(ficheirosEdicao.imagem));
+    // Só é enviado se houver o que guardar (ou apagar), para não depender da coluna em pedidos antigos
+    const subtitulo = document.getElementById('edit-subtitulo').value.trim();
+    if (subtitulo || pAntigo.subtitulo) formData.append('subtitulo', subtitulo);
 
     // Reenvia os restantes campos para não serem perdidos
     for (const key in pAntigo) {
-        if (!['descricao', 'codigos_linhas', 'valor', 'data_entrega', 'arquivo_dst', 'arquivo_imagem', 'clientes', 'itens'].includes(key)) {
+        if (!['subtitulo', 'descricao','codigos_linhas', 'valor', 'data_entrega', 'arquivo_dst', 'arquivo_imagem', 'clientes', 'itens'].includes(key)) {
             formData.append(key, pAntigo[key] !== null ? pAntigo[key] : '');
         }
     }
@@ -1668,6 +1676,7 @@ function mudarFormularioEstoque() {
 
 async function carregarEstoque() {
     const resposta = await api(`${URL_API}/estoque`);
+    if (!resposta.ok) { console.error('Não foi possível carregar o estoque.'); return; }
     estoqueGlobais = await resposta.json();
     renderizarEstoque();
 }
@@ -1723,7 +1732,7 @@ async function guardarEstoque() {
 
 async function apagarEstoque(id) {
     if (!confirm('Confirma a remoção deste artigo do estoque?')) return;
-    await api(`${URL_API}/estoque/${id}`, { method: 'DELETE' });
+    await apiAlterar(`${URL_API}/estoque/${id}`, { method: 'DELETE' }, 'Não foi possível eliminar o artigo.');
     carregarEstoque();
 }
 
@@ -1744,32 +1753,8 @@ function pedidosDoPeriodo() {
     });
 }
 
-function ehPedidoDP(p) {
-    return !!(p.clientes && p.clientes.nome && p.clientes.nome.trim().toUpperCase() === 'DP');
-}
 
-// Quanto falta receber de um pedido ainda não concluído
-function valorPorReceber(p) {
-    const valor = parseFloat(p.valor || 0);
-    if (p.tipo_pagamento === 'Completo') return 0;
-    if (p.tipo_pagamento === 'Parcial') return Math.max(valor - parseFloat(p.valor_pago || 0), 0);
-    return valor;
-}
 
-// Divide o valor de um pedido em base sem IVA e IVA.
-// Só os pedidos com produtos (campo itens) têm IVA discriminado; nos antigos o valor
-// conta todo como base sem IVA e o pedido é assinalado (semDiscriminacao)
-function decomporIva(p) {
-    const valor = parseFloat(p.valor || 0);
-    if (Array.isArray(p.itens) && p.itens.length) {
-        const t = totaisItens(p.itens.map(i => ({ sem_iva: i.sem_iva || 0, iva: i.iva || 0 })));
-        if (t.semIva > 0) return { semIva: t.semIva, iva: t.iva, total: t.comIva, semDiscriminacao: false };
-        // Pedidos do portal: produtos sem preço por linha; o valor guardado na confirmação inclui IVA
-        const semIva = arred(valor / (1 + TAXA_IVA));
-        return { semIva, iva: arred(valor - semIva), total: valor, semDiscriminacao: false };
-    }
-    return { semIva: valor, iva: 0, total: valor, semDiscriminacao: true };
-}
 
 function calcularEstatisticasGlobais() {
     const soma = () => ({ semIva: 0, iva: 0, total: 0 });
