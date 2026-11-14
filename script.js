@@ -578,6 +578,13 @@ function renderizarPedidos() {
         return naAba && bateTexto && bateData && bateFat;
     });
 
+    // Entrega mais próxima primeiro (atrasados no topo); sem data de entrega vão para o fim.
+    // Nos concluídos mantém-se a ordem que vem do servidor.
+    if (abaAtual !== 'concluidos') {
+        const dataEntrega = p => p.data_entrega ? p.data_entrega.slice(0, 10) : '9999-12-31';
+        filtrados.sort((a, b) => dataEntrega(a).localeCompare(dataEntrega(b)));
+    }
+
     if (filtrados.length === 0) {
         painel.innerHTML = '<p style="text-align: center; color: #888;">Nenhum pedido encontrado.</p>';
         return;
@@ -1955,7 +1962,6 @@ async function gerarPDF(id, via = 'cliente', imprimir = false) {
     const { jsPDF } = window.jspdf;
     const p = pedidosGlobais.find(item => item.id === id);
     if (!p) return;
-    const viaLoja = via === 'loja';
     // a janela tem de abrir já no clique, senão o navegador bloqueia
     const janela = imprimir ? window.open('', '_blank') : null;
     const [logo, ...imagens] = await Promise.all([carregarLogoPDF(), ...lerUrls(p.arquivo_imagem).map(carregarImagemPDF)]);
@@ -1985,6 +1991,8 @@ async function gerarPDF(id, via = 'cliente', imprimir = false) {
         : '(Artigo do Cliente)';
     const tamanhos = p.tamanhos_artigo ? p.tamanhos_artigo : '-';
 
+    // desenha uma via completa a partir da página atual do documento
+    const desenharVia = (viaLoja) => {
     // ---------- PÁGINA 1: cabeçalho ----------
     if (logo) {
         const altura = 24, largura = Math.min(altura * logo.proporcao, 90);
@@ -2139,9 +2147,20 @@ async function gerarPDF(id, via = 'cliente', imprimir = false) {
         doc.setTextColor(0, 0, 0);
         doc.text(`Entrega: ${dataEntrega}${textoPrazo}`, MARGEM, y);
 
+        // declaração de concordância, logo acima da assinatura
+        const declaracao = doc.splitTextToSize(
+            'Declaro que li e aceito os Termos de Serviço e Condições do Orçamento que constam no verso da via do cliente, ' +
+            'e que tenho conhecimento de que podem ocorrer imprevistos durante a execução do trabalho.',
+            DIREITA - MARGEM);
+        y += 14;
+        if (y + declaracao.length * 4.5 + 22 > 275) { doc.addPage(); y = 30; }
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9.5);
+        doc.setTextColor(60, 60, 60);
+        doc.text(declaracao, MARGEM, y, { lineHeightFactor: 1.4 });
+
         // campo para o cliente assinar (a loja fica com esta via assinada)
-        y += 30;
-        if (y > 262) { doc.addPage(); y = 30; }
+        y += declaracao.length * 4.5 + 18;
         doc.setDrawColor(90, 90, 90);
         doc.setLineWidth(0.3);
         doc.line(MARGEM, y, 125, y);
@@ -2222,16 +2241,29 @@ async function gerarPDF(id, via = 'cliente', imprimir = false) {
     doc.setTextColor(140, 140, 140);
     doc.text('Bordaveiro - Documento gerado eletronicamente', 105, 281, { align: 'center' });
     }
+    };
 
-    if (viaLoja) {
+    if (via === 'loja') {
         // via interna: só imprime, não substitui o PDF do cliente guardado na nuvem
+        desenharVia(true);
         if (janela) { doc.autoPrint(); janela.location = doc.output('bloburl'); }
         else doc.save(`Bordaveiro_Pedido_${p.id}_loja.pdf`);
         return;
     }
+    desenharVia(false);
     doc.save(`Bordaveiro_Pedido_${p.id}.pdf`);
-    if (janela) { doc.autoPrint(); janela.location = doc.output('bloburl'); }
-    await guardarPDFNaNuvem(p.id, doc.output('blob'));
+    // o PDF descarregado e o guardado na nuvem ficam só com a via do cliente
+    const pdfCliente = doc.output('blob');
+    if (janela) {
+        // ao imprimir a via do cliente, a via da loja segue no mesmo trabalho de impressão;
+        // página em branco se preciso, para a via da loja não sair no verso da do cliente
+        if (doc.getNumberOfPages() % 2) doc.addPage();
+        doc.addPage();
+        desenharVia(true);
+        doc.autoPrint();
+        janela.location = doc.output('bloburl');
+    }
+    await guardarPDFNaNuvem(p.id, pdfCliente);
 }
 
 // Substitui o PDF guardado do pedido; o ficheiro descarregado não depende disto
