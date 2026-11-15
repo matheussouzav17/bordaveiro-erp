@@ -21,7 +21,7 @@ app.use(express.urlencoded({ extended: true }));
 const FICHEIROS_PUBLICOS = new Set([
   '/', '/index.html', '/script.js', '/style.css', '/sw.js', '/manifest.json',
   '/logo.png', '/logo-192.png', '/logo-512.png', '/fundo.jpg',
-  '/portal.html', '/portal.js', '/chat.js', '/excel.js', '/calculos.js'
+  '/portal.html', '/portal.js', '/chat.js', '/excel.js', '/calculos.js', '/etiqueta.js'
 ]);
 // Endereço curto do portal para os clientes
 app.get('/portal', (req, res) => res.sendFile(path.join(__dirname, 'portal.html')));
