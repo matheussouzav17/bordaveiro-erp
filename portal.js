@@ -703,7 +703,7 @@ function renderizarPedidos() {
             return `
           <div class="portal-pedido cartao-pedido${pedidosAbertos.has(p.id) ? ' aberto' : ''}" onclick="alternarDetalhesPedido(event, ${p.id})" style="border-left-color: ${estado.cor};">
             <div style="display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center;">
-              <strong style="color: #4A2511;">Pedido nº ${p.id}${p.subtitulo ? ` · ${escapar(p.subtitulo)}` : ''}</strong>
+              <strong style="color: #4A2511;">Pedido nº ${p.id}${p.subtitulo ? ` · ${escapar(p.subtitulo.toUpperCase())}` : ''}</strong>
               <span>
                 ${ehAprovado(p) ? `<span class="portal-estado" style="background: ${p.faturado ? '#2980b9' : '#95a5a6'};">${p.faturado ? 'Faturado' + (p.data_faturado ? ' · ' + formatarData(p.data_faturado) : '') : 'A faturar'}</span>` : ''}
                 <span class="portal-estado" style="background: ${estado.cor};">${estado.texto}</span>
