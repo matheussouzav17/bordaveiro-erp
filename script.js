@@ -978,13 +978,12 @@ function validarLimiteFicheiros(input, jaExistentes = 0) {
     return false;
 }
 
-// Procura um pedido do mesmo cliente, no mesmo mês, com os mesmos produtos e valor
-function encontrarPedidoDuplicado(clienteId, ehOrcamento) {
+// Procura um pedido do mesmo cliente, no mesmo mês, com o mesmo subtítulo, produtos e valor.
+// O subtítulo conta porque nos clientes DP/WORKSHOP muitos pedidos são iguais e só ele os distingue
+function encontrarPedidoDuplicado(clienteId, ehOrcamento, itens, valor, subtitulo) {
     const norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
     const assinatura = lista => lista.map(i => `${norm(i.nome)}x${i.quantidade || 1}`).sort().join('|');
-    const itens = itensValidos();
     const sig = assinatura(itens);
-    const valor = parseFloat(document.getElementById('novo-valor').value || 0);
     const mes = new Date().toISOString().slice(0, 7);
 
     return pedidosGlobais.find(p => {
@@ -992,6 +991,7 @@ function encontrarPedidoDuplicado(clienteId, ehOrcamento) {
         if (p.status === 'Cancelado') return false;
         if ((p.status === 'Orçamento') !== ehOrcamento) return false;
         if (String(p.data_pedido || '').slice(0, 7) !== mes) return false;
+        if (norm(p.subtitulo) !== norm(subtitulo)) return false;
         const sigP = Array.isArray(p.itens) && p.itens.length ? assinatura(p.itens) : `${norm(p.descricao)}x1`;
         return sigP === sig && Math.abs(parseFloat(p.valor || 0) - valor) < 0.005;
     });
@@ -1009,7 +1009,8 @@ async function guardarPedido(status = 'Pendente') {
         msg.style.color = 'red'; msg.innerText = 'Para gerar o orçamento, preencha o valor.'; return;
     }
 
-    const duplicado = encontrarPedidoDuplicado(clienteId, ehOrcamento);
+    const duplicado = encontrarPedidoDuplicado(clienteId, ehOrcamento, itensValidos(),
+        parseFloat(document.getElementById('novo-valor').value || 0), document.getElementById('novo-subtitulo').value);
     if (duplicado) {
         const quando = duplicado.data_pedido ? formatarData(String(duplicado.data_pedido).slice(0, 10)) : 'este mês';
         const continuar = confirm(`Atenção: já existe ${duplicado.status === 'Orçamento' ? 'um orçamento' : 'um pedido'} (#${duplicado.id}, de ${quando}) para este cliente, neste mês, com as mesmas informações.\n\nQuer mesmo ${ehOrcamento ? 'gerar o orçamento' : 'guardar o pedido'} outra vez?\n\nOK = confirmar  |  Cancelar = não guardar`);
@@ -1200,6 +1201,17 @@ async function criarPedidoDP() {
     }
     if (!descricao) {
         msg.style.color = 'red'; msg.innerText = 'Indique o nome de pelo menos um produto.'; return;
+    }
+
+    const duplicado = encontrarPedidoDuplicado(dp.id, false, itens, valor, document.getElementById('dp-subtitulo').value);
+    if (duplicado) {
+        const quando = duplicado.data_pedido ? formatarData(String(duplicado.data_pedido).slice(0, 10)) : 'este mês';
+        const continuar = confirm(`Atenção: já existe um pedido (#${duplicado.id}, de ${quando}) para ${clienteRapido}, neste mês, com as mesmas informações.
+
+Quer mesmo guardar o pedido outra vez?
+
+OK = confirmar  |  Cancelar = não guardar`);
+        if (!continuar) { msg.style.color = 'red'; msg.innerText = 'Cancelado: possível pedido duplicado.'; return; }
     }
 
     const formData = new FormData();
