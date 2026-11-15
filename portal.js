@@ -750,10 +750,11 @@ async function exportarRelatorio() {
     // Os pedidos antigos têm uma só cor; os novos têm-na em cada produto
     const corLinha = p => p.cor_linha || (Array.isArray(p.itens) ? p.itens : []).map(i => i.codigos).filter(Boolean).join('; ');
 
-    const cabecalho = ['Pedido nº', 'Produtos', 'Cor / código da linha', 'Data de entrada', 'Data pretendida', 'Data de entrega', 'Estado', 'Faturação'];
-    const larguras = [11, 45, 22, 16, 16, 16, 26, 14];
+    const cabecalho = ['Pedido nº', 'Subtítulo', 'Produtos', 'Cor / código da linha', 'Data de entrada', 'Data pretendida', 'Data de entrega', 'Estado', 'Faturação'];
+    const larguras = [11, 26, 45, 22, 16, 16, 16, 26, 14];
     const linhas = aprovados.map(p => [
         p.id,
+        (p.subtitulo || '').toUpperCase(),
         produtos(p),
         corLinha(p),
         formatarData(p.data_pedido),
@@ -767,7 +768,7 @@ async function exportarRelatorio() {
     await gerarExcelBordaveiro({
         titulo: `Pedidos aprovados - ${localStorage.getItem(CHAVE_NOME) || ""}`,
         periodo, cabecalho, linhas, larguras,
-        colunasEsquerda: [1],
+        colunasEsquerda: [1, 2],
         rodape: `Total: ${linhas.length} pedido(s)`,
         ficheiro: `Bordaveiro_Pedidos_Aprovados${sufixo}.xlsx`
     });

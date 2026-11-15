@@ -17,7 +17,7 @@ function imprimirEtiqueta(p, tituloAlternativo = '') {
     const doc = new jsPDF({ unit: 'mm', format: 'a6', compress: true });
     const LARGURA = 105, ALTURA = 148, MARGEM = 10, X = 15, MAX = LARGURA - 2 * X;
 
-    const titulo = p.subtitulo || tituloAlternativo || `Pedido nº ${p.id}`;
+    const titulo = (p.subtitulo || tituloAlternativo || `Pedido nº ${p.id}`).toUpperCase();
     const dataIso = String(p.data_pedido || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
     const data = dataIso.split('-').reverse().join('.');
     const itens = Array.isArray(p.itens) && p.itens.length

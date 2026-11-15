@@ -1870,46 +1870,46 @@ async function exportarRelatorio(tipo) {
     const fim = document.getElementById('stat-data-fim').value;
     let titulo, cabecalho, linhas, totais;
 
-    const base = p => [p.id, p.clientes ? p.clientes.nome : 'Desconhecido', p.descricao || '', formatarData(p.data_entrega)];
+    const base = p => [p.id, p.clientes ? p.clientes.nome : 'Desconhecido', (p.subtitulo || '').toUpperCase(), p.descricao || '', formatarData(p.data_entrega)];
 
     if (tipo === 'dp' || tipo === 'workshop') {
         // Sem colunas de IVA: o IVA destes clientes é só de controlo no cartão
         const ehDoCliente = tipo === 'dp' ? ehPedidoDP : ehPedidoWorkshop;
         titulo = tipo === 'dp' ? 'Faturação DP' : 'Faturação WORKSHOP';
-        cabecalho = ['Pedido', 'Cliente', 'Descrição', 'Data de Entrega', 'Método de Pagamento', 'Valor (€)'];
+        cabecalho = ['Pedido', 'Cliente', 'Subtítulo', 'Descrição', 'Data de Entrega', 'Método de Pagamento', 'Valor (€)'];
         linhas = lista.filter(p => p.status === 'Concluído' && ehDoCliente(p))
             .map(p => [...base(p), p.metodo_pagamento || '', decomporIva(p).total]);
-        totais = ['', '', '', '', 'TOTAL', linhas.reduce((t, l) => t + l[5], 0)];
+        totais = ['', '', '', '', '', 'TOTAL', linhas.reduce((t, l) => t + l[6], 0)];
     } else if (tipo === 'faturacao') {
         const concluidos = lista.filter(p => p.status === 'Concluído');
         titulo = 'Faturação Geral';
-        cabecalho = ['Pedido', 'Cliente', 'Descrição', 'Data de Entrega', 'Método de Pagamento', 'Sem IVA (€)', 'IVA 23% (€)', 'Total (€)', 'Observação'];
+        cabecalho = ['Pedido', 'Cliente', 'Subtítulo', 'Descrição', 'Data de Entrega', 'Método de Pagamento', 'Sem IVA (€)', 'IVA 23% (€)', 'Total (€)', 'Observação'];
         linhas = concluidos.map(p => {
             const v = decomporIva(p);
             return [...base(p), p.metodo_pagamento || '', v.semIva, v.iva, v.total, v.semDiscriminacao ? 'Pedido antigo, IVA não discriminado' : ''];
         });
-        totais = ['', '', '', '', 'TOTAL',
-            linhas.reduce((t, l) => t + l[5], 0),
+        totais = ['', '', '', '', '', 'TOTAL',
             linhas.reduce((t, l) => t + l[6], 0),
-            linhas.reduce((t, l) => t + l[7], 0), ''];
+            linhas.reduce((t, l) => t + l[7], 0),
+            linhas.reduce((t, l) => t + l[8], 0), ''];
     } else if (tipo === 'pendente') {
         const abertos = lista.filter(p => p.status !== 'Concluído');
         titulo = 'Por Receber';
-        cabecalho = ['Pedido', 'Cliente', 'Descrição', 'Data de Entrega', 'Estado do Pagamento', 'Valor Total (€)', 'Valor Pago (€)', 'Por Receber (€)'];
+        cabecalho = ['Pedido', 'Cliente', 'Subtítulo', 'Descrição', 'Data de Entrega', 'Estado do Pagamento', 'Valor Total (€)', 'Valor Pago (€)', 'Por Receber (€)'];
         linhas = abertos.map(p => {
             const valor = parseFloat(p.valor || 0);
             const aReceber = valorPorReceber(p);
             return [...base(p), p.tipo_pagamento || '', valor, valor - aReceber, aReceber];
         });
-        totais = ['', '', '', '', 'TOTAL',
-            linhas.reduce((t, l) => t + l[5], 0),
+        totais = ['', '', '', '', '', 'TOTAL',
             linhas.reduce((t, l) => t + l[6], 0),
-            linhas.reduce((t, l) => t + l[7], 0)];
+            linhas.reduce((t, l) => t + l[7], 0),
+            linhas.reduce((t, l) => t + l[8], 0)];
     } else {
         titulo = 'Pedidos';
-        cabecalho = ['Pedido', 'Cliente', 'Descrição', 'Data de Entrega', 'Estado', 'Valor (€)'];
+        cabecalho = ['Pedido', 'Cliente', 'Subtítulo', 'Descrição', 'Data de Entrega', 'Estado', 'Valor (€)'];
         linhas = lista.map(p => [...base(p), p.status || '', parseFloat(p.valor || 0)]);
-        totais = ['', '', '', '', 'TOTAL', linhas.reduce((t, l) => t + l[5], 0)];
+        totais = ['', '', '', '', '', 'TOTAL', linhas.reduce((t, l) => t + l[6], 0)];
     }
 
     // Coluna de faturação em todos os relatórios (a 1.ª coluna de cada linha é o nº do pedido)
@@ -1930,8 +1930,8 @@ async function exportarRelatorio(tipo) {
     const hoje = new Date().toISOString().slice(0, 10);
     await gerarExcelBordaveiro({
         titulo, periodo, cabecalho, linhas, totais,
-        larguras: cabecalho.map((_, i) => i === 2 ? 38 : i === 1 ? 26 : 18),
-        colunasEsquerda: [1, 2],
+        larguras: cabecalho.map((_, i) => i === 3 ? 38 : i === 1 || i === 2 ? 26 : 18),
+        colunasEsquerda: [1, 2, 3],
         ficheiro: `Bordaveiro_${titulo.replace(/\s+/g, '_')}_${hoje}.xlsx`
     });
 }
