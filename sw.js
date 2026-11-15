@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bordaveiro-v4'; // Mudar a versão força a atualização e apaga a cache antiga
+const CACHE_NAME = 'bordaveiro-v5'; // Mudar a versão força a atualização e apaga a cache antiga
 
 const ASSETS = [
   './',
@@ -7,6 +7,7 @@ const ASSETS = [
   './script.js',
   './chat.js',
   './excel.js',
+  './etiqueta.js',
   './style.css',
   './manifest.json',
   './logo.png'

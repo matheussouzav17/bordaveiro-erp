@@ -653,7 +653,7 @@ function renderizarPedidos() {
       <div class="cartao-pedido${pedidosAbertos.has(p.id) ? ' aberto' : ''}" onclick="alternarDetalhesPedido(event, ${p.id})" style="border-left: 5px solid ${corBorda}; background: white; padding: 15px; margin-bottom: 12px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
         <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom: 8px; gap: 10px; flex-wrap: wrap;">
           <strong style="font-size: 15px; color: #4A2511;">#${p.id} - ${escapar(p.descricao)}${ehOrcamento ? ' <span style="font-size:11px; background:#E5A83B; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">ORÇAMENTO</span>' : ''}${doPortal ? ' <span class="badge-portal">PORTAL</span>' : ''}${cancelado ? ' <span class="badge-cancelado">CANCELADO PELO CLIENTE</span>' : ''}${p.faturado && !ehOrcamento && !doPortal && !cancelado ? ' <span style="font-size:11px; background:#2980b9; color:white; padding:2px 6px; border-radius:4px; margin-left:4px;">FATURADO' + (p.data_faturado ? ' · ' + formatarData(p.data_faturado) : '') + '</span>' : ''}${p.subtitulo ? `<span style="display:block; font-size:13px; font-weight:normal; font-style:italic; color:#8C5E3C; margin-top:2px;">${escapar(p.subtitulo)}</span>` : ''}</strong>
-          <div style="display:flex; gap:6px; flex-wrap: wrap;">${botaoDst}${urlPdf ? `<a href="${escapar(urlPdf)}" target="_blank" class="btn-small" style="background:#c0392b;">PDF guardado</a>` : ''}<button class="btn-small" style="background:#A67B5B;" onclick="gerarPDF(${p.id}, 'cliente', true)">Imprimir via cliente</button><button class="btn-small" style="background:#7a5a40;" onclick="gerarPDF(${p.id}, 'loja', true)">Imprimir via loja</button></div>
+          <div style="display:flex; gap:6px; flex-wrap: wrap;">${botaoDst}${urlPdf ? `<a href="${escapar(urlPdf)}" target="_blank" class="btn-small" style="background:#c0392b;">PDF guardado</a>` : ''}<button class="btn-small" style="background:#A67B5B;" onclick="gerarPDF(${p.id}, 'cliente', true)">Imprimir via cliente</button><button class="btn-small" style="background:#7a5a40;" onclick="gerarPDF(${p.id}, 'loja', true)">Imprimir via loja</button><button class="btn-small" style="background:#4A2511;" onclick="gerarEtiqueta(${p.id})" title="Papel com local, letra e cor da linha, um por produto">Etiqueta</button></div>
         </div>
         <div class="pedido-corpo${urlsImagem.length > 1 ? ' varias-imagens' : ''}">
           ${miniatura}
@@ -2299,6 +2299,12 @@ async function gerarPDF(id, via = 'cliente', imprimir = false) {
         janela.location = doc.output('bloburl');
     }
     await guardarPDFNaNuvem(p.id, pdfCliente);
+}
+
+// Etiqueta de produção: o desenho está em etiqueta.js (partilhado com o portal)
+function gerarEtiqueta(id) {
+    const p = pedidosGlobais.find(item => item.id === id);
+    if (p) imprimirEtiqueta(p, p.clientes ? p.clientes.nome : '');
 }
 
 // Substitui o PDF guardado do pedido; o ficheiro descarregado não depende disto

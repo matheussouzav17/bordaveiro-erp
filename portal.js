@@ -712,11 +712,17 @@ function renderizarPedidos() {
             ${itens}
             <div style="margin-top: 4px;">${linhaEntrega(p)}</div>
             ${avisoCancelar(p)}
+            ${p.status !== 'Cancelado' ? `<button class="btn-small" style="background: #4A2511; margin-top: 6px;" onclick="imprimirEtiquetaPortal(${p.id})" title="Papel com local, letra e cor da linha, um por produto">Etiqueta</button>` : ''}
             <div class="pedido-ver-detalhes"></div>
             ${detalhesPedido(p)}
             <small style="color: #999;">Data de entrada: ${formatarData(p.data_pedido)}</small>
           </div>`;
         }).join('');
+}
+
+function imprimirEtiquetaPortal(id) {
+    const p = pedidosPortal.find(item => item.id === id);
+    if (p) imprimirEtiqueta(p);
 }
 
 // Relatório em Excel dos pedidos aprovados do período (sem valores)
