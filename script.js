@@ -622,6 +622,13 @@ function renderizarPedidos() {
             : `<button class="btn-small" style="background:#2980b9;" onclick="mudarFaturado(${p.id}, true)">Faturado</button>
                <input type="date" id="data-fat-${p.id}" title="Data de faturação (vazio = hoje)" style="padding:5px; border:1px solid #ccc; border-radius:4px; font-size:13px;">`;
 
+        // Só para pedidos confirmados e ainda por concluir; o cliente vê o estado no portal
+        const btnProducao = p.status !== 'Pendente'
+            ? ''
+            : p.em_producao
+            ? `<button class="btn-small" style="background:#7f8c8d;" onclick="mudarProducao(${p.id}, false)" title="Voltar a marcar como em espera">Desfazer produção</button>`
+            : `<button class="btn-small" style="background:#8C5E3C;" onclick="mudarProducao(${p.id}, true)" title="Marcar que o pedido entrou em produção">Em produção</button>`;
+
         const btnEditar = `<button class="btn-small" style="background:#f39c12;" onclick="abrirEditarPedido(${p.id})">Editar</button>`;
 
         const [urlPdf] = lerUrls(p.arquivo_pdf);
@@ -664,7 +671,7 @@ function renderizarPedidos() {
         <div class="pedido-ver-detalhes"></div>
         ${detalhesPedido(p)}
         <div style="display:flex; gap:10px; margin-top:12px; flex-wrap: wrap;">
-          ${btnConcluir} ${btnFaturado} ${btnWhatsApp} ${btnEditar}
+          ${btnProducao} ${btnConcluir} ${btnFaturado}${btnWhatsApp} ${btnEditar}
           <button class="btn-small" style="background:#e74c3c;" onclick="apagarPedido(${p.id})">Eliminar</button>
         </div>
       </div>`;
@@ -1065,6 +1072,15 @@ async function mudarStatus(id, novoStatus) {
     carregarPedidos();
 }
 
+async function mudarProducao(id, emProducao) {
+    await apiAlterar(`${URL_API}/pedidos/${id}/producao`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ em_producao: emProducao })
+    }, 'Não foi possível atualizar a produção. Confirme que a coluna "em_producao" existe na base de dados.');
+    carregarPedidos();
+}
+
 async function mudarDataFaturado(id, data) {
     await mudarFaturado(id, true, data);
 }
@@ -1093,8 +1109,20 @@ async function apagarPedido(id) {
     carregarPedidos();
 }
 
-// --- Pedido rápido DP ---
-function abrirModalDP() {
+// --- Pedido rápido (DP e WORKSHOP partilham o mesmo modal) ---
+let clienteRapido = 'DP';
+
+function limparModalDP() {
+    ['dp-subtitulo', 'dp-data-entrega', 'dp-imagem', 'dp-dst'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('lista-itens-dp').innerHTML = '';
+    document.getElementById('msg-dp-pedido').innerText = '';
+}
+
+function abrirModalDP(nome = 'DP') {
+    // Ao trocar de cliente o rascunho é limpo, para não ir parar ao cliente errado
+    if (nome !== clienteRapido) limparModalDP();
+    clienteRapido = nome;
+    document.querySelectorAll('.dp-nome-cliente').forEach(el => el.innerText = nome);
     if (!document.querySelector('#lista-itens-dp .item-pedido')) adicionarItemDP();
     document.getElementById('modal-dp').style.display = 'flex';
 }
@@ -1164,10 +1192,10 @@ async function criarPedidoDP() {
     const valor = arred(itens.reduce((s, i) => s + i.sem_iva, 0));
     const dataEntrega = document.getElementById('dp-data-entrega').value;
 
-    const dp = clientesGlobais.find(c => c.nome.trim().toUpperCase() === 'DP');
+    const dp = clientesGlobais.find(c => c.nome.trim().toUpperCase() === clienteRapido);
     if (!dp) {
         msg.style.color = 'red';
-        msg.innerText = 'Não existe um cliente com o nome "DP". Crie-o primeiro em "Novo Cliente".';
+        msg.innerText = `Não existe um cliente com o nome "${clienteRapido}". Crie-o primeiro em "Novo Cliente".`;
         return;
     }
     if (!descricao) {
@@ -1177,6 +1205,8 @@ async function criarPedidoDP() {
     const formData = new FormData();
     formData.append('cliente_id', dp.id);
     formData.append('descricao', descricao);
+    const subtitulo = document.getElementById('dp-subtitulo').value.trim();
+    if (subtitulo) formData.append('subtitulo', subtitulo);
     formData.append('itens', JSON.stringify(itens));
     formData.append('origem_artigo', 'Cliente');
     formData.append('codigos_linhas', juntarCodigos(lerItensDP()));
@@ -1192,9 +1222,7 @@ async function criarPedidoDP() {
         const res = await api(`${URL_API}/pedidos`, { method: 'POST', body: formData });
         if (!res.ok) throw new Error('Falha ao guardar.');
 
-        ['dp-data-entrega', 'dp-imagem', 'dp-dst'].forEach(id => document.getElementById(id).value = '');
-        document.getElementById('lista-itens-dp').innerHTML = '';
-        msg.innerText = '';
+        limparModalDP();
         fecharModalDP();
         carregarPedidos();
     } catch (e) {
@@ -1483,7 +1511,7 @@ function abrirEditarPedido(id) {
     document.getElementById('edit-descricao').value = p.descricao || '';
     document.getElementById('edit-subtitulo').value = p.subtitulo || '';
     document.getElementById('edit-valor').value = p.valor || '';
-    edicaoSemIva = ehPedidoDP(p);
+    edicaoSemIva = ehPedidoSemIva(p);
     document.querySelectorAll('.edit-so-iva').forEach(el => el.style.display = edicaoSemIva ? 'none' : '');
     document.getElementById('edit-total-rotulo').innerText = edicaoSemIva ? 'Total' : 'Total com IVA';
     document.getElementById('edit-lista-itens').innerHTML = '';
@@ -1765,17 +1793,21 @@ function pedidosDoPeriodo() {
 
 function calcularEstatisticasGlobais() {
     const soma = () => ({ semIva: 0, iva: 0, total: 0 });
-    const geral = soma(), dp = soma();
+    const geral = soma();
     let totalPendente = 0, antigos = 0, valorAntigos = 0;
-    // Pedidos DP (incluindo os do portal, que não têm valor: o acerto é no fim do mês)
-    let dpConcluidos = 0, dpEmCurso = 0;
+    // Cartões exclusivos DP e WORKSHOP (os DP do portal não têm valor: o acerto é no fim do mês)
+    const exclusivos = [
+        { id: 'dp', eh: ehPedidoDP, soma: soma(), concluidos: 0, emCurso: 0 },
+        { id: 'workshop', eh: ehPedidoWorkshop, soma: soma(), concluidos: 0, emCurso: 0 }
+    ];
     const lista = pedidosDoPeriodo();
 
     lista.forEach(p => {
-        if (ehPedidoDP(p)) p.status === 'Concluído' ? dpConcluidos++ : dpEmCurso++;
+        const excl = exclusivos.find(e => e.eh(p));
+        if (excl) p.status === 'Concluído' ? excl.concluidos++ : excl.emCurso++;
         if (p.status === 'Concluído') {
             const v = decomporIva(p);
-            [geral, ...(ehPedidoDP(p) ? [dp] : [])].forEach(s => {
+            [geral, ...(excl ? [excl.soma] : [])].forEach(s => {
                 s.semIva += v.semIva; s.iva += v.iva; s.total += v.total;
             });
             if (v.semDiscriminacao) { antigos++; valorAntigos += v.total; }
@@ -1789,12 +1821,14 @@ function calcularEstatisticasGlobais() {
     document.getElementById('stat-faturado').innerText = euro(geral.total);
     document.getElementById('stat-faturado-detalhe').innerText = detalhe(geral);
     document.getElementById('stat-iva').innerText = euro(geral.iva);
-    document.getElementById('stat-faturado-dp').innerText = euro(dp.total);
-    // Os pedidos DP não levam IVA; o IVA mostrado é só de controlo (23% sobre o valor sem IVA)
-    // e não entra no IVA a entregar nem no relatório em Excel
-    document.getElementById('stat-faturado-dp-detalhe').innerText =
-        `${dpConcluidos} concluído(s) · ${dpEmCurso} em curso` +
-        (dp.total ? `\nSem IVA: ${euro(dp.semIva)}\nIVA 23% (controlo): ${euro(arred(dp.semIva * TAXA_IVA))}` : '');
+    // Os pedidos DP e WORKSHOP não levam IVA; o IVA mostrado é só de controlo (23% sobre o valor
+    // sem IVA) e não entra no IVA a entregar nem no relatório em Excel
+    exclusivos.forEach(e => {
+        document.getElementById(`stat-faturado-${e.id}`).innerText = euro(e.soma.total);
+        document.getElementById(`stat-faturado-${e.id}-detalhe`).innerText =
+            `${e.concluidos} concluído(s) · ${e.emCurso} em curso` +
+            (e.soma.total ? `\nSem IVA: ${euro(e.soma.semIva)}\nIVA 23% (controlo): ${euro(arred(e.soma.semIva * TAXA_IVA))}` : '');
+    });
     document.getElementById('stat-pendente').innerText = euro(totalPendente);
     document.getElementById('stat-qtd').innerText = lista.length;
 
@@ -1826,11 +1860,12 @@ async function exportarRelatorio(tipo) {
 
     const base = p => [p.id, p.clientes ? p.clientes.nome : 'Desconhecido', p.descricao || '', formatarData(p.data_entrega)];
 
-    if (tipo === 'dp') {
-        // Sem colunas de IVA: o IVA da DP é só de controlo no cartão
-        titulo = 'Faturação DP';
+    if (tipo === 'dp' || tipo === 'workshop') {
+        // Sem colunas de IVA: o IVA destes clientes é só de controlo no cartão
+        const ehDoCliente = tipo === 'dp' ? ehPedidoDP : ehPedidoWorkshop;
+        titulo = tipo === 'dp' ? 'Faturação DP' : 'Faturação WORKSHOP';
         cabecalho = ['Pedido', 'Cliente', 'Descrição', 'Data de Entrega', 'Método de Pagamento', 'Valor (€)'];
-        linhas = lista.filter(p => p.status === 'Concluído' && ehPedidoDP(p))
+        linhas = lista.filter(p => p.status === 'Concluído' && ehDoCliente(p))
             .map(p => [...base(p), p.metodo_pagamento || '', decomporIva(p).total]);
         totais = ['', '', '', '', 'TOTAL', linhas.reduce((t, l) => t + l[5], 0)];
     } else if (tipo === 'faturacao') {

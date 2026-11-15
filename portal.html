@@ -136,6 +136,11 @@
           <div class="card">
             <h3 style="border-bottom: 2px solid #EADDCE; padding-bottom: 12px; margin-bottom: 20px;">Novo Pedido</h3>
 
+            <div class="input-group">
+              <label>Título (opcional)</label>
+              <input type="text" id="titulo-pedido" maxlength="120" placeholder="Nome da encomenda">
+            </div>
+
             <div class="caixa-produtos">
               <label style="display: block; font-weight: bold; margin-bottom: 10px; color: #4A2511;">Produtos</label>
               <div id="lista-itens-pedido"></div>
@@ -168,6 +173,17 @@
                 <button class="btn-small" style="background: #A67B5B;" onclick="carregarPedidos()">Atualizar</button>
               </div>
             </div>
+            <div class="portal-abas">
+              <button type="button" id="aba-pronto" class="portal-aba" style="--cor-aba: #27ae60;" onclick="alternarFiltroEstado('pronto')">
+                <span>Pronto</span><strong id="conta-pronto">0</strong>
+              </button>
+              <button type="button" id="aba-producao" class="portal-aba" style="--cor-aba: #8C5E3C;" onclick="alternarFiltroEstado('producao')">
+                <span>Produção</span><strong id="conta-producao">0</strong>
+              </button>
+              <button type="button" id="aba-espera" class="portal-aba" style="--cor-aba: #C98A1B;" onclick="alternarFiltroEstado('espera')">
+                <span>Em espera</span><strong id="conta-espera">0</strong>
+              </button>
+            </div>
             <div class="portal-filtro">
               <div>
                 <small>De</small>
@@ -181,7 +197,7 @@
                 <small>Faturação</small>
                 <select id="filtro-faturacao" onchange="renderizarPedidos()">
                   <option value="">Todos</option>
-                  <option value="a-faturar">A faturar</option>
+                  <option value="a-faturar" selected>A faturar</option>
                   <option value="faturado">Faturado</option>
                 </select>
               </div>

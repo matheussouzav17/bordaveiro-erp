@@ -25,9 +25,15 @@ function totaisItens(itens) {
     return { semIva, iva, comIva: arred(semIva + iva) };
 }
 
-function ehPedidoDP(p) {
-    return !!(p.clientes && p.clientes.nome && p.clientes.nome.trim().toUpperCase() === 'DP');
+function ehPedidoDoCliente(p, nome) {
+    return !!(p.clientes && p.clientes.nome && p.clientes.nome.trim().toUpperCase() === nome);
 }
+
+function ehPedidoDP(p) { return ehPedidoDoCliente(p, 'DP'); }
+function ehPedidoWorkshop(p) { return ehPedidoDoCliente(p, 'WORKSHOP'); }
+
+// Clientes do registo rápido: os pedidos não levam IVA (DP e WORKSHOP)
+function ehPedidoSemIva(p) { return ehPedidoDP(p) || ehPedidoWorkshop(p); }
 
 // Quanto falta receber de um pedido ainda não concluído
 function valorPorReceber(p) {
@@ -54,5 +60,5 @@ function decomporIva(p) {
 
 // No browser as funções ficam globais; no Node (testes) são exportadas
 if (typeof module !== 'undefined') {
-    module.exports = { TAXA_IVA, arred, calcularItemIva, totaisItens, ehPedidoDP, valorPorReceber, decomporIva };
+    module.exports = { TAXA_IVA, arred, calcularItemIva, totaisItens, ehPedidoDP, ehPedidoWorkshop, ehPedidoSemIva, valorPorReceber, decomporIva };
 }

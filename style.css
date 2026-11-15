@@ -148,6 +148,10 @@ h1, h2, h3 { color: #4A2511; margin-top: 0; }
 .rec-codigo { font-family: Consolas, 'Courier New', monospace; font-size: 26px; font-weight: bold; letter-spacing: 3px; text-align: center; color: #4A2511; background: #FAF6F2; border: 2px dashed #C38D59; border-radius: 8px; padding: 12px; margin-bottom: 15px; }
 .rec-codigo:empty { display: none; }
 .rec-estado { font-size: 13px; font-weight: bold; text-align: center; }
+.portal-abas { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-bottom: 10px; }
+.portal-aba { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 14px; background: white; border: 2px solid var(--cor-aba); border-radius: 6px; color: var(--cor-aba); font-family: inherit; font-size: 15px; font-weight: bold; cursor: pointer; }
+.portal-aba strong { font-size: 20px; }
+.portal-aba.ativa { background: var(--cor-aba); color: white; }
 .portal-filtro { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; background: #FAF6F2; border: 1px solid #EADDCE; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
 .portal-filtro > div { flex: 1; min-width: 130px; }
 .portal-filtro small { display: block; font-weight: bold; color: #4A2511; margin-bottom: 3px; }

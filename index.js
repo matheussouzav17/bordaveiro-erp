@@ -202,14 +202,21 @@ const limiteLogin = rateLimit({
 
 const ehHash = senha => /^\$2[aby]\$/.test(senha || '');
 
+// Procura a conta pelo email sem distinguir maiúsculas de minúsculas (a palavra-passe continua a distinguir).
+// No ilike, % _ e \ são escapados para contarem como texto; o * não pode ser escapado, por isso
+// um email com * é comparado de forma exata
+function comEmail(consulta, email) {
+  const limpo = String(email || '').trim();
+  return limpo.includes('*')
+    ? consulta.eq('email', limpo)
+    : consulta.ilike('email', limpo.replace(/[\\%_]/g, '\\$&'));
+}
+
 app.post('/auth/login', limiteLogin, async (req, res) => {
   const { email, senha } = req.body;
   if (!email || !senha) return res.status(400).json({ erro: 'Introduza o email e a palavra-passe.' });
 
-  const { data, error } = await supabase
-    .from('utilizadores')
-    .select('*')
-    .eq('email', String(email).trim())
+  const { data, error } = await comEmail(supabase.from('utilizadores').select('*'), email)
     .maybeSingle();
 
   if (error) {
@@ -266,8 +273,8 @@ function gerarCodigo() {
 
 // Devolve o pedido mais recente do cliente se o email e o código baterem certo
 async function pedidoRecuperacao(email, codigo) {
-  const { data: conta } = await supabase
-    .from('utilizadores').select('id').eq('email', String(email || '').trim()).eq('perfil', 'cliente').maybeSingle();
+  const { data: conta } = await comEmail(supabase.from('utilizadores').select('id'), email)
+    .eq('perfil', 'cliente').maybeSingle();
   if (!conta || !codigo) return null;
 
   const { data: pedido } = await supabase
@@ -289,8 +296,8 @@ app.post('/portal/recuperar', limiteLogin, async (req, res) => {
 
   // A resposta é igual quer a conta exista quer não, para não revelar que emails estão registados
   const codigo = gerarCodigo();
-  const { data: conta } = await supabase
-    .from('utilizadores').select('id').eq('email', email).eq('perfil', 'cliente').maybeSingle();
+  const { data: conta } = await comEmail(supabase.from('utilizadores').select('id'), email)
+    .eq('perfil', 'cliente').maybeSingle();
 
   if (conta) {
     // Um pedido novo substitui os anteriores ainda por usar
@@ -396,12 +403,17 @@ function itensDoCliente(json) {
 }
 
 app.get('/portal/pedidos', apenasCliente, async (req, res) => {
-  const { data, error } = await supabase
+  const campos = 'id, data_pedido, descricao, subtitulo, itens, cor_linha, data_pretendida, data_entrega, status, faturado, data_faturado, arquivo_imagem, arquivo_dst';
+  const consultar = colunas => supabase
     .from('pedidos')
-    .select('id, data_pedido, descricao, itens, cor_linha, data_pretendida, data_entrega, status, faturado, data_faturado, arquivo_imagem, arquivo_dst')
+    .select(colunas)
     .eq('cliente_id', req.utilizador.cliente_id)
     .neq('status', 'Orçamento')
     .order('id', { ascending: false });
+
+  let { data, error } = await consultar(`${campos}, em_producao`);
+  // Sem a migração 04 a coluna em_producao ainda não existe: o portal continua a funcionar sem ela
+  if (error && error.code === '42703') ({ data, error } = await consultar(campos));
 
   if (error) {
     console.error(error);
@@ -438,6 +450,7 @@ app.post('/portal/pedidos', apenasCliente, (req, res, next) => {
         cliente_id: req.utilizador.cliente_id,
         status: ESTADO_PEDIDO_PORTAL,
         descricao: itens.map(i => i.nome).join(', ').slice(0, 300),
+        subtitulo: String(req.body.subtitulo || '').trim().slice(0, 120) || null,
         itens,
         codigos_linhas: [...new Set(itens.map(i => i.codigos).filter(Boolean))].join(', '),
         data_pretendida: dataValida(req.body.data_pretendida),
@@ -791,6 +804,14 @@ app.patch('/pedidos/:id/faturado', async (req, res) => {
     console.error(error);
     return res.status(500).json({ erro: 'Erro ao atualizar a faturação.' });
   }
+  res.json({ sucesso: true });
+});
+
+// Marca (ou desmarca) um pedido como estando em produção; o cliente vê-o no portal
+app.patch('/pedidos/:id/producao', async (req, res) => {
+  const { error } = await supabase.from('pedidos')
+    .update({ em_producao: req.body.em_producao === true }).eq('id', req.params.id);
+  if (error) return erroBD(res, error, 'Erro ao atualizar a produção.');
   res.json({ sucesso: true });
 });
 

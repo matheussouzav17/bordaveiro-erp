@@ -413,7 +413,7 @@ function validarFicheiros(input) {
 
 function limparFormulario() {
     document.getElementById('lista-itens-pedido').innerHTML = '';
-    ['data-pretendida', 'ficheiros'].forEach(id => document.getElementById(id).value = '');
+    ['titulo-pedido', 'data-pretendida', 'ficheiros'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('data-pretendida').min = new Date().toISOString().slice(0, 10);
     adicionarItem();
 }
@@ -429,6 +429,7 @@ async function enviarPedido() {
 
     const formData = new FormData();
     formData.append('itens', JSON.stringify(itens));
+    formData.append('subtitulo', document.getElementById('titulo-pedido').value.trim());
     formData.append('data_pretendida', document.getElementById('data-pretendida').value);
     [...ficheiros.files].forEach(f => formData.append('ficheiro', f));
 
@@ -469,7 +470,10 @@ function estadoCliente(p) {
     if (p.status === 'Pedido Cliente') return { texto: 'A aguardar confirmação', cor: '#E5A83B' };
     if (p.status === 'Cancelado') return { texto: 'Cancelado', cor: '#95a5a6' };
     if (p.status === 'Concluído') return { texto: 'Pronto', cor: '#27ae60' };
-    return { texto: 'Confirmado · em produção', cor: '#8C5E3C' };
+    // Confirmado: fica em espera até a Bordaveiro marcar que entrou em produção
+    return p.em_producao
+        ? { texto: 'Em produção', cor: '#8C5E3C' }
+        : { texto: 'Confirmado · em espera', cor: '#C98A1B' };
 }
 
 // A Bordaveiro indicou uma data diferente da pedida
@@ -518,7 +522,8 @@ function linhaEntrega(p) {
 // --- Aviso de mudança de estado ---
 // O último estado visto de cada pedido fica guardado, para avisar também
 // do que mudou enquanto o portal esteve fechado
-const CHAVE_ESTADOS = 'estados_portal';
+// (v2: os nomes dos estados mudaram; a chave nova evita avisos falsos de mudança)
+const CHAVE_ESTADOS = 'estados_portal_v2';
 const DURACAO_AVISO = 15 * 1000;
 const estadosVistos = lerEstadosVistos();
 let contextoAudio = null;
@@ -610,7 +615,22 @@ function pedidosDoPeriodo() {
 function limparFiltroDatas() {
     document.getElementById('filtro-de').value = '';
     document.getElementById('filtro-ate').value = '';
-    document.getElementById('filtro-faturacao').value = '';
+    document.getElementById('filtro-faturacao').value = 'a-faturar'; // valor por omissão
+    filtroEstado = '';
+    renderizarPedidos();
+}
+
+// Botões Pronto / Produção / Em espera no topo da lista: clicar filtra, clicar outra vez volta a mostrar todos
+let filtroEstado = '';
+const ABAS_ESTADO = {
+    pronto: { nome: 'prontos', eh: p => p.status === 'Concluído' },
+    producao: { nome: 'em produção', eh: p => p.status === 'Pendente' && !!p.em_producao },
+    // Em espera: ainda por confirmar, ou confirmado mas ainda não entrou em produção
+    espera: { nome: 'em espera', eh: p => p.status === 'Pedido Cliente' || (p.status === 'Pendente' && !p.em_producao) }
+};
+
+function alternarFiltroEstado(estado) {
+    filtroEstado = filtroEstado === estado ? '' : estado;
     renderizarPedidos();
 }
 
@@ -655,13 +675,22 @@ function detalhesPedido(p) {
 function renderizarPedidos() {
     const div = document.getElementById('lista-pedidos');
     const filtrado = !!(document.getElementById('filtro-de').value || document.getElementById('filtro-ate').value || document.getElementById('filtro-faturacao').value);
-    const pedidos = pedidosDoPeriodo();
+    const doPeriodo = pedidosDoPeriodo();
     document.getElementById('resumo-filtro').innerText = filtrado
-        ? `${pedidos.length} pedido(s) no período, ${pedidos.filter(ehAprovado).length} aprovado(s).`
+        ? `${doPeriodo.length} pedido(s) no período, ${doPeriodo.filter(ehAprovado).length} aprovado(s).`
         : '';
 
+    // Os contadores seguem os filtros de datas e de faturação
+    Object.entries(ABAS_ESTADO).forEach(([aba, { eh }]) => {
+        document.getElementById(`conta-${aba}`).innerText = doPeriodo.filter(eh).length;
+        document.getElementById(`aba-${aba}`).classList.toggle('ativa', filtroEstado === aba);
+    });
+    const pedidos = filtroEstado ? doPeriodo.filter(ABAS_ESTADO[filtroEstado].eh) : doPeriodo;
+
     if (!pedidos.length) {
-        div.innerHTML = `<p style="text-align: center; color: #888;">${filtrado ? 'Não há pedidos neste período.' : 'Ainda não fez nenhum pedido.'}</p>`;
+        const vazio = filtroEstado ? `Não há pedidos ${ABAS_ESTADO[filtroEstado].nome}${filtrado ? ' neste período' : ''}.`
+            : filtrado ? 'Não há pedidos neste período.' : 'Ainda não fez nenhum pedido.';
+        div.innerHTML = `<p style="text-align: center; color: #888;">${vazio}</p>`;
         return;
     }
 
@@ -674,7 +703,7 @@ function renderizarPedidos() {
             return `
           <div class="portal-pedido cartao-pedido${pedidosAbertos.has(p.id) ? ' aberto' : ''}" onclick="alternarDetalhesPedido(event, ${p.id})" style="border-left-color: ${estado.cor};">
             <div style="display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center;">
-              <strong style="color: #4A2511;">Pedido nº ${p.id}</strong>
+              <strong style="color: #4A2511;">Pedido nº ${p.id}${p.subtitulo ? ` · ${escapar(p.subtitulo)}` : ''}</strong>
               <span>
                 ${ehAprovado(p) ? `<span class="portal-estado" style="background: ${p.faturado ? '#2980b9' : '#95a5a6'};">${p.faturado ? 'Faturado' + (p.data_faturado ? ' · ' + formatarData(p.data_faturado) : '') : 'A faturar'}</span>` : ''}
                 <span class="portal-estado" style="background: ${estado.cor};">${estado.texto}</span>
