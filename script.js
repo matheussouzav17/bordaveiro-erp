@@ -84,6 +84,7 @@ async function fazerLogin() {
     const msgErro = document.getElementById('msg-erro');
 
     msgErro.style.display = 'none';
+    msgErro.style.color = 'red';
 
     if (!email || !password) {
         msgErro.innerText = 'Introduza o email e a palavra-passe.';
@@ -143,6 +144,53 @@ function mostrarDashboard() {
 function terminarSessao() {
     localStorage.clear();
     location.reload();
+}
+
+// Mostra/esconde o formulário de alterar a palavra-passe no ecrã de login
+function abrirAlterarSenha(abrir) {
+    document.getElementById('caixa-login').style.display = abrir ? 'none' : 'block';
+    document.getElementById('caixa-alterar-senha').style.display = abrir ? 'block' : 'none';
+    document.getElementById('msg-erro').style.display = 'none';
+    if (abrir) {
+        document.getElementById('alt-email').value = document.getElementById('email').value;
+        ['alt-atual', 'alt-nova', 'alt-nova-2'].forEach(id => document.getElementById(id).value = '');
+    }
+}
+
+async function alterarSenhaLogin() {
+    const email = document.getElementById('alt-email').value.trim();
+    const atual = document.getElementById('alt-atual').value;
+    const nova = document.getElementById('alt-nova').value;
+    const nova2 = document.getElementById('alt-nova-2').value;
+    const msg = document.getElementById('msg-erro');
+    const mostrar = (texto, cor = 'red') => { msg.style.color = cor; msg.innerText = texto; msg.style.display = 'block'; };
+
+    if (!email || !atual || !nova) return mostrar('Preencha o email, a palavra-passe atual e a nova.');
+    if (nova.length < 8) return mostrar('A nova palavra-passe deve ter pelo menos 8 caracteres.');
+    if (nova !== nova2) return mostrar('As novas palavras-passe não coincidem.');
+    if (nova === atual) return mostrar('A nova palavra-passe tem de ser diferente da atual.');
+
+    const botao = document.getElementById('btn-alt-senha');
+    botao.disabled = true;
+    try {
+        const resposta = await fetch(`${URL_API}/auth/senha`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, atual, nova })
+        });
+        const dados = await resposta.json();
+        if (!resposta.ok) return mostrar(dados.erro || 'Não foi possível alterar a palavra-passe.');
+
+        abrirAlterarSenha(false);
+        document.getElementById('email').value = email;
+        document.getElementById('password').value = '';
+        mostrar('Palavra-passe alterada. Já pode entrar com a nova palavra-passe.', 'green');
+    } catch (e) {
+        console.error('Erro ao alterar a palavra-passe:', e);
+        mostrar('Não foi possível contactar o servidor. Tente novamente mais tarde.');
+    } finally {
+        botao.disabled = false;
+    }
 }
 
 function recuperarSenha() {

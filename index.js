@@ -212,12 +212,31 @@ function comEmail(consulta, email) {
     : consulta.ilike('email', limpo.replace(/[\\%_]/g, '\\$&'));
 }
 
+// Devolve a conta com este email e palavra-passe (ou null).
+// Pode haver contas antigas com o mesmo email em maiúsculas/minúsculas diferentes:
+// tenta primeiro a que coincide exatamente e fica com a primeira cuja palavra-passe bate certo
+async function contaComSenha(email, senha) {
+  const { data: contas, error } = await comEmail(supabase.from('utilizadores').select('*'), email)
+    .order('id');
+  if (error) return { error };
+
+  const exato = String(email).trim();
+  contas.sort((a, b) => (b.email === exato) - (a.email === exato));
+
+  for (const conta of contas) {
+    const certa = ehHash(conta.senha)
+      ? await bcrypt.compare(String(senha), conta.senha)
+      : conta.senha === senha;
+    if (certa) return { conta };
+  }
+  return { conta: null };
+}
+
 app.post('/auth/login', limiteLogin, async (req, res) => {
   const { email, senha } = req.body;
   if (!email || !senha) return res.status(400).json({ erro: 'Introduza o email e a palavra-passe.' });
 
-  const { data, error } = await comEmail(supabase.from('utilizadores').select('*'), email)
-    .maybeSingle();
+  const { conta: data, error } = await contaComSenha(email, senha);
 
   if (error) {
     console.error('Erro Supabase no login:', error.code, error.message);
@@ -225,11 +244,7 @@ app.post('/auth/login', limiteLogin, async (req, res) => {
   }
 
   // Contas antigas ainda têm a palavra-passe em texto: aceita-a uma vez e converte-a para hash
-  const senhaCorreta = data && (ehHash(data.senha)
-    ? await bcrypt.compare(String(senha), data.senha)
-    : data.senha === senha);
-
-  if (!senhaCorreta) {
+  if (!data) {
     return res.status(401).json({ erro: 'Email ou palavra-passe incorretos.' });
   }
 
@@ -242,6 +257,31 @@ app.post('/auth/login', limiteLogin, async (req, res) => {
   }
 
   res.json({ token: criarToken(data), perfil: data.perfil, nome: data.nome });
+});
+
+// Alterar a palavra-passe no ecrã de login (sem sessão): pede o email e a palavra-passe atual
+app.post('/auth/senha', limiteLogin, async (req, res) => {
+  const { email, atual, nova } = req.body;
+  if (!email || !atual || !nova) return res.status(400).json({ erro: 'Preencha o email, a palavra-passe atual e a nova.' });
+  if (String(nova).length < 8) return res.status(400).json({ erro: 'A nova palavra-passe deve ter pelo menos 8 caracteres.' });
+  if (nova === atual) return res.status(400).json({ erro: 'A nova palavra-passe tem de ser diferente da atual.' });
+
+  const { conta, error } = await contaComSenha(email, atual);
+  if (error) {
+    console.error('Erro Supabase ao alterar a palavra-passe:', error.code, error.message);
+    return res.status(500).json({ erro: 'Erro ao consultar a base de dados.' });
+  }
+  if (!conta) return res.status(401).json({ erro: 'Email ou palavra-passe atual incorretos.' });
+
+  const { error: erroUpdate } = await supabase
+    .from('utilizadores')
+    .update({ senha: await bcrypt.hash(String(nova), 10) })
+    .eq('id', conta.id);
+  if (erroUpdate) {
+    console.error(erroUpdate);
+    return res.status(500).json({ erro: 'Não foi possível alterar a palavra-passe.' });
+  }
+  res.json({ sucesso: true });
 });
 
 // ==========================================
@@ -605,6 +645,11 @@ app.post('/utilizadores', apenasAdmin, async (req, res) => {
   const { nome, email, senha, perfil, cliente_id } = req.body;
   if (!email || !senha) return res.status(400).json({ erro: 'Preencha o email e a palavra-passe.' });
   if (perfil === 'cliente' && !cliente_id) return res.status(400).json({ erro: 'Escolha o cliente desta conta.' });
+
+  // O login não distingue maiúsculas, por isso dois emails só diferentes nisso seriam a mesma conta
+  const { data: existentes, error: erroExiste } = await comEmail(supabase.from('utilizadores').select('id'), email).limit(1);
+  if (erroExiste) return erroBD(res, erroExiste, 'Erro ao consultar a base de dados.');
+  if (existentes.length) return res.status(400).json({ erro: 'Já existe uma conta com este email.' });
 
   const { error } = await supabase.from('utilizadores').insert([{
     nome,

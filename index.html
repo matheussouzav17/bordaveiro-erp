@@ -27,18 +27,35 @@
         <h2 style="color: #4a2511; margin-top: 0; margin-bottom: 5px; font-size: 32px; font-family: 'Times New Roman', serif; font-style: italic;">Bordaveiro</h2>
         <p class="login-subtitle">Acesso ao Sistema</p>
 
-        <div class="input-wrapper">
-          <input type="email" id="email" class="login-input" placeholder="Email" onkeydown="if(event.key === 'Enter') fazerLogin()">
-        </div>
-        <div class="input-wrapper">
-          <input type="password" id="password" class="login-input" placeholder="Palavra-passe" onkeydown="if(event.key === 'Enter') fazerLogin()">
+        <div id="caixa-login">
+          <div class="input-wrapper">
+            <input type="email" id="email" class="login-input" placeholder="Email" onkeydown="if(event.key === 'Enter') fazerLogin()">
+          </div>
+          <div class="input-wrapper">
+            <input type="password" id="password" class="login-input" placeholder="Palavra-passe" onkeydown="if(event.key === 'Enter') fazerLogin()">
+          </div>
+
+          <button class="btn-login" onclick="fazerLogin()">Entrar</button>
+
+          <p style="margin-top: 20px; font-size: 13px;">
+            <a href="#" class="link-portal" onclick="abrirAlterarSenha(true); return false;">Alterar palavra-passe</a>
+            &nbsp;·&nbsp;
+            <a href="#" class="link-portal" onclick="recuperarSenha(); return false;">Recuperar acesso</a>
+          </p>
         </div>
 
-        <button class="btn-login" onclick="fazerLogin()">Entrar</button>
-
-        <p style="margin-top: 20px; font-size: 13px;">
-          <a href="#" onclick="recuperarSenha(); return false;" style="color: #8C5E3C; text-decoration: none; font-weight: bold;">Recuperar acesso</a>
-        </p>
+        <!-- Alterar a palavra-passe sem entrar (pede a atual) -->
+        <div id="caixa-alterar-senha" style="display: none; text-align: left;">
+          <p class="rec-texto">Indique o seu email, a palavra-passe atual e a nova.</p>
+          <div class="input-wrapper"><input type="email" id="alt-email" class="login-input" placeholder="Email" autocomplete="username"></div>
+          <div class="input-wrapper"><input type="password" id="alt-atual" class="login-input" placeholder="Palavra-passe atual" autocomplete="current-password"></div>
+          <div class="input-wrapper"><input type="password" id="alt-nova" class="login-input" placeholder="Nova palavra-passe (mín. 8 caracteres)" autocomplete="new-password"></div>
+          <div class="input-wrapper"><input type="password" id="alt-nova-2" class="login-input" placeholder="Repetir a nova palavra-passe" autocomplete="new-password" onkeydown="if(event.key === 'Enter') alterarSenhaLogin()"></div>
+          <button id="btn-alt-senha" class="btn-login" onclick="alterarSenhaLogin()">Guardar</button>
+          <p style="margin-top: 20px; font-size: 13px; text-align: center;">
+            <a href="#" class="link-portal" onclick="abrirAlterarSenha(false); return false;">Voltar ao login</a>
+          </p>
+        </div>
 
         <p id="msg-erro" style="color: red; display: none; margin-top: 15px; font-size: 12px; font-weight: bold;"></p>
       </div>
